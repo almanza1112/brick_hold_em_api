@@ -9,4 +9,8 @@ app.get('/', async (req, res) => {
 const tableRouter  = require('./routes/table')
 app.use('/table', tableRouter)
 
-app.listen(3000, () => console.log('Server Started')) 
+//Uncomment below for local testing
+//app.listen(3000, () => console.log('Server Started'))
+
+//Uncomment below for push
+app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
