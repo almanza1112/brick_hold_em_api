@@ -8,7 +8,7 @@ router.get('/', async (req, res) => {
     try {
         //const users = await User.find()
         console.log(cards.shuffle())
-        res.status(201).json({'hi':cards.shuffle()})
+        res.status(201).json({'cards':cards.shuffle()})
     } catch (err) {
         res.status(500).json({ message: err.message })
     }
