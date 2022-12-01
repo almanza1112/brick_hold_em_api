@@ -1,0 +1,18 @@
+{
+  "name": "brick_hold_em_api",
+  "version": "1.0.0",
+  "description": "The API for Brick Hold Em",
+  "main": "index.js",
+  "scripts": {
+    "devStart": "nodemon server.js"
+  },
+  "author": "Bryant Almanza",
+  "license": "ISC",
+  "devDependencies": {
+    "dotenv": "^16.0.3",
+    "nodemon": "^2.0.20"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}
