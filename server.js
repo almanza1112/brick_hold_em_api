@@ -9,6 +9,9 @@ app.get('/', async (req, res) => {
 const tableRouter  = require('./routes/table')
 app.use('/table', tableRouter)
 
+const accountRouter = require('./routes/account')
+app.use('/account', accountRouter)
+
 //Uncomment below for local testing
 //app.listen(3000, () => console.log('Server Started'))
 
