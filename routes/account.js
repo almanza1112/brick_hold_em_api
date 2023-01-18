@@ -13,8 +13,10 @@ router.get('/:_email', async (req, res) => {
     
     try {
 
-        console.log("in try")
         var email = req.params._email;
+
+        console.log("email: " + email)
+
 
         admin.auth()
             .getUserByEmail(email)
@@ -35,6 +37,9 @@ router.get('/:_email', async (req, res) => {
                     console.log("in error if statement")
 
                     res.status(201).json({'emailUsed': false })
+                } else {
+                    res.status(201).json({ 'error': error.code })
+
                 }
 
             });
