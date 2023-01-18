@@ -10,7 +10,9 @@ admin.initializeApp({
 
 // Getting all
 router.get('/:_email', async (req, res) => {
+    console.log("before try")
     try {
+        console.log("in try");
         var email = req.params._email;
 
         admin.auth()
