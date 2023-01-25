@@ -10,7 +10,7 @@ admin.initializeApp({
 
 // Getting all
 router.get('/:_email', async (req, res) => {
-    
+
     try {
 
         var email = req.params._email;
@@ -24,9 +24,8 @@ router.get('/:_email', async (req, res) => {
                 console.log("in user record")
                 // See the UserRecord reference doc for the contents of userRecord.
                 if (userRecord.email === email) {
-                    console.log("in userrecord if statement")
-
-                    res.status(201).json({'emailUsed': true })
+                    // Email is not available
+                    res.status(201).json({ 'emailAvailable': false })
                 } /** TODO: Check logic on this */
             })
             .catch((error) => {
@@ -34,9 +33,8 @@ router.get('/:_email', async (req, res) => {
 
                 /** TODO: Check logic on this */
                 if (error.code === 'auth/user-not-found') {
-                    console.log("in error if statement")
-
-                    res.status(201).json({'emailUsed': false })
+                    // Email is available for user 
+                    res.status(201).json({ 'emailAvailable': true })
                 } else {
                     res.status(201).json({ 'error': error.code })
 
