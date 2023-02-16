@@ -1,6 +1,6 @@
 const express = require('express')
 const router = express.Router()
-const cards = require('../table/cards')
+const cards = require('../table/table_starting_hand')
 
 
 // Getting all

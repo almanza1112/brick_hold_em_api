@@ -1,17 +1,19 @@
 const express = require('express')
 const router = express.Router()
 var admin = require("firebase-admin");
-var serviceAccount = require("../brick-hold-em-firebase-adminsdk-s0v2q-48899a2943.json");
 
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    databaseURL: "https://brick-hold-em-default-rtdb.firebaseio.com"
+
+// test get
+router.get('/', async (req, res) => {
+    res.status(201).json({'message': "success"});
 });
 
-// Getting all
+// Getting email
 router.get('/:_email', async (req, res) => {
-
+    
     try {
+
+    
 
         var email = req.params._email;
 
