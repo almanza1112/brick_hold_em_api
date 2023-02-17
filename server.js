@@ -16,21 +16,53 @@ firebaseAdmin.initializeApp({
 
 var db = firebaseAdmin.database();
 
-var ref = db.ref('tables/1/players');
-// Whenever a change occurs
-ref.on('value', (snapshot) => {
+var refPlayers = db.ref('tables/1/players');
+var refCards = db.ref('tables/1/cards');
+var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
+
+// Whenever a player joins the lobby
+refPlayers.on('value', async (snapshot) => {
     var data = snapshot.toJSON();
-    var dataLength = Object.keys(data).length;
-    if(dataLength > 1) {
-        startGame(dataLength);
-    }
+    // Retrieve how many players in table
+    var numOfPlayers = Object.keys(data).length;
+    
+    if(numOfPlayers > 1) {
+        // Check if round is in progress
+        var result = await isRoundInProgress();
+        if (!result){
+            startGame(data, numOfPlayers);
+        }
+    } 
+
     }, (errorObject) => {
     console.log('The read failed: ' + errorObject.name)
 });
 
-function startGame(numOfPlayers) {
-    cards.setCards(numOfPlayers)
+ async function isRoundInProgress(){
+     var result = await refIsRoundInProgress.once('value');
+    console.log(result.val())
+     return result.val();
+    
+}
 
+function startGame(data , numOfPlayers) {
+    var info = cards.setCards(numOfPlayers)
+    var dataKeys = Object.keys(data)
+    
+    var cardUpdates = {}
+    for (i = 0; i < numOfPlayers; i++){
+        cardUpdates[dataKeys[i]] = {"startingHand": info['playersCards'][i]};
+    }
+    cardUpdates['dealer'] = info['deck'];
+    console.log(cardUpdates)
+
+    refCards.update(cardUpdates)
+        .then(() => { 
+            console.log("SUCCESS")
+        })
+        .catch((error) => {
+            console.log("ERROR: " + error)
+        })
 }
 
 app.get('/', async (req, res) => {

@@ -40,8 +40,40 @@ var cards = [
     'brick',
 ]
 
-function shuffle() {
-    let currentIndex = cards.length, randomIndex;
+function setCards(numOfPlayers) {
+    var playersCardList = [];
+    let startingHandNum = 5;
+    var remainingCards = shuffleArray(cards);
+
+    // Dynamically creating arrays for players card list
+    for ( i = 0; i < numOfPlayers; i++ ) {
+        playersCardList.push([])
+    }
+
+    for (i = 0; i < startingHandNum; i++){
+        // Add cards to arrays (playersCardList)
+        for(j = 0; j < playersCardList.length; j++){
+            // Add that is at the last position of the remainingCards array
+            playersCardList[j].push(remainingCards[remainingCards.length - 1])
+
+            // Remove card that is at the last position of the array
+            remainingCards.pop()
+        }
+    }
+
+    // Shuffle the hands one more time
+    var shuffledArray = shuffleArray(playersCardList);
+
+    var startingHandAndDeck = {
+        "playersCards" : shuffledArray,
+        "deck" : remainingCards
+    }
+
+    return startingHandAndDeck
+}
+
+function shuffleArray(array) {
+    let currentIndex = array.length, randomIndex;
 
     // While there remain elements to shuffle.
     while (currentIndex != 0) {
@@ -51,43 +83,11 @@ function shuffle() {
         currentIndex--;
 
         // And swap it with the current element.
-        [cards[currentIndex], cards[randomIndex]] = [
-            cards[randomIndex], cards[currentIndex]];
+        [array[currentIndex], array[randomIndex]] = [
+            array[randomIndex], array[currentIndex]];
     }
 
-    return cards;
+    return array;
 }
 
-function setCards(numOfPlayers) {
-    var playersCardList = [];
-    let startingHandNum = 5;
-    var remainingCards = cards;
-    let currentIndex = remainingCards.length;
-
-
-    var testPlayer = []
-
-    // Dynamically creating arrays for players card list
-    for ( i = 0; i < numOfPlayers; i++ ) {
-        var playerNum = i + 1;
-        playersCardList.push(["player" + playerNum])
-    }
-
-    for (i = 0; i < startingHandNum; i++){
-        randomIndex = Math.floor(Math.random() * currentIndex) // random set of numbers from 0 - current index
-        console.log(randomIndex)
-        var card = remainingCards[randomIndex];
-        testPlayer.push(card)
-        var index = remainingCards.indexOf(card)
-        if (index > -1 ) {
-            remainingCards.splice(index, 1);
-        }
-        currentIndex = remainingCards.length; 
-    }
-
-    console.log(testPlayer)
-    console.log(remainingCards)
-
-}
-
-module.exports = {shuffle, setCards}
+module.exports = {setCards}
