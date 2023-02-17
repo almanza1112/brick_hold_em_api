@@ -53,7 +53,7 @@ function setCards(numOfPlayers) {
     for (i = 0; i < startingHandNum; i++){
         // Add cards to arrays (playersCardList)
         for(j = 0; j < playersCardList.length; j++){
-            // Add that is at the last position of the remainingCards array
+            // Add card that is at the last position of the remainingCards array
             playersCardList[j].push(remainingCards[remainingCards.length - 1])
 
             // Remove card that is at the last position of the array

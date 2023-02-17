@@ -16,6 +16,7 @@ firebaseAdmin.initializeApp({
 
 var db = firebaseAdmin.database();
 
+var refTable = db.ref('tables/1')
 var refPlayers = db.ref('tables/1/players');
 var refCards = db.ref('tables/1/cards');
 var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
@@ -40,7 +41,7 @@ refPlayers.on('value', async (snapshot) => {
 
  async function isRoundInProgress(){
      var result = await refIsRoundInProgress.once('value');
-    console.log(result.val())
+     //console.log(result.val())
      return result.val();
     
 }
@@ -50,13 +51,16 @@ function startGame(data , numOfPlayers) {
     var dataKeys = Object.keys(data)
     
     var cardUpdates = {}
+    var update = {}
     for (i = 0; i < numOfPlayers; i++){
         cardUpdates[dataKeys[i]] = {"startingHand": info['playersCards'][i]};
     }
     cardUpdates['dealer'] = info['deck'];
-    console.log(cardUpdates)
+    update = { "roundInProgress": true, "cards": cardUpdates }
 
-    refCards.update(cardUpdates)
+    console.log(update)
+    
+    refTable.update(update)
         .then(() => { 
             console.log("SUCCESS")
         })
