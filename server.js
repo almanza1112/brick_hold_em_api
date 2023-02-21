@@ -2,7 +2,7 @@ const express = require('express')
 const app = express()
 
 // TODO: need to remove this eventually
-const cards = require('./table/table_starting_hand')
+const startingHand = require('./table/table_starting_hand')
 
 
 var firebaseAdmin = require("firebase-admin");
@@ -18,7 +18,6 @@ var db = firebaseAdmin.database();
 
 var refTable = db.ref('tables/1')
 var refPlayers = db.ref('tables/1/players');
-var refCards = db.ref('tables/1/cards');
 var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
 
 // Whenever a player joins the lobby
@@ -41,24 +40,28 @@ refPlayers.on('value', async (snapshot) => {
 
  async function isRoundInProgress(){
      var result = await refIsRoundInProgress.once('value');
-     //console.log(result.val())
      return result.val();
     
 }
 
 function startGame(data , numOfPlayers) {
-    var info = cards.setCards(numOfPlayers)
-    var dataKeys = Object.keys(data)
+    // Get starting hand
+    var _startingHand = startingHand.setCards(numOfPlayers)
+    // Retrieve uids of players
+    var playerUids = Object.keys(data)
     
     var cardUpdates = {}
     var update = {}
-    for (i = 0; i < numOfPlayers; i++){
-        cardUpdates[dataKeys[i]] = {"startingHand": info['playersCards'][i]};
-    }
-    cardUpdates['dealer'] = info['deck'];
-    update = { "roundInProgress": true, "cards": cardUpdates }
 
-    console.log(update)
+    // Set the starting hand to players
+    for (i = 0; i < numOfPlayers; i++){
+        cardUpdates[playerUids[i]] = {"startingHand": _startingHand['playersCards'][i]};
+    }
+
+    // Set what the remaining cards are to the dealer
+    cardUpdates['dealer'] = _startingHand['deck'];
+    // Update roundInProgress to true
+    update = { "roundInProgress": true, "cards": cardUpdates }
     
     refTable.update(update)
         .then(() => { 
