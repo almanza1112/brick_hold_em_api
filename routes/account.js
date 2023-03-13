@@ -2,7 +2,6 @@ const express = require('express')
 const router = express.Router()
 var admin = require("firebase-admin");
 
-
 // test get
 router.get('/', async (req, res) => {
     res.status(201).json({'message': "success"});
@@ -12,14 +11,8 @@ router.get('/', async (req, res) => {
 router.get('/:_email', async (req, res) => {
     
     try {
-
-    
-
         var email = req.params._email;
-
         console.log("email: " + email)
-
-
         admin.auth()
             .getUserByEmail(email)
             .then((userRecord) => {
@@ -39,9 +32,7 @@ router.get('/:_email', async (req, res) => {
                     res.status(201).json({ 'emailAvailable': true })
                 } else {
                     res.status(201).json({ 'error': error.code })
-
                 }
-
             });
 
     } catch (err) {
