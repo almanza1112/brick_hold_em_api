@@ -23,16 +23,22 @@ var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
 // Whenever a player joins the lobby
 refPlayers.on('value', async (snapshot) => {
     var data = snapshot.toJSON();
-    // Retrieve how many players in table
-    var numOfPlayers = Object.keys(data).length;
+    if(data == null) {
+        // Table is empty or does not exist
+
+    } else {
+        // Retrieve how many players in table
+        var numOfPlayers = Object.keys(data).length;
+
+        if (numOfPlayers > 1) {
+            // Check if round is in progress
+            var result = await isRoundInProgress();
+            if (!result) {
+                startGame(data, numOfPlayers);
+            }
+        } 
+    }
     
-    if(numOfPlayers > 1) {
-        // Check if round is in progress
-        var result = await isRoundInProgress();
-        if (!result){
-            startGame(data, numOfPlayers);
-        }
-    } 
 
     }, (errorObject) => {
     console.log('The read failed: ' + errorObject.name)
@@ -82,6 +88,9 @@ app.use('/table', tableRouter)
 
 const accountRouter = require('./routes/account')
 app.use('/account', accountRouter)
+
+const signInRouter = require('./routes/sign_in');
+app.use('/sign_in', signInRouter)
 
 //Uncomment below for local testing
 //app.listen(3000, () => console.log('Server Started'))
