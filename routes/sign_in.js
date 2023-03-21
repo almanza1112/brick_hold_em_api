@@ -36,10 +36,10 @@ router.get('/:_email', async (req, res) => {
                 // Now check if authentication methods are the same
                 if (req.query.providerID === userRecord.providerData[0].providerId) {
                     // Authentication method matches, this is a returning user
-                    res.status(201).json({ 'authMethodMatches': true });
+                    res.status(201).json({ 'result': "Authentication method matches." });
                 } else {
                     // Authentication method does not match, this is a duplicate
-                    res.status(201).json({ 'authMethodMatches': false });
+                    res.status(201).json({ 'result': "Authentication method does not match." });
                 }
             })
             .catch((error) => {
@@ -47,9 +47,9 @@ router.get('/:_email', async (req, res) => {
                 /** TODO: Check logic on this */
                 if (error.code === 'auth/user-not-found') {
                     // Email is available for user 
-                    res.status(201).json({ 'newUser': true })
+                    res.status(201).json({ 'result': "New user." })
                 } else {
-                    res.status(201).json({ 'error': error.code })
+                    res.status(201).json({ 'result': error.code })
                 }
             });
 
