@@ -68,7 +68,7 @@ function startGame(data , numOfPlayers) {
     // Set what the remaining cards are to the dealer
     cardUpdates['dealer'] = _startingHand['deck'];
     cardUpdates['faceUpCard'] = _startingHand['faceUpCard'];
-    
+
     // Update roundInProgress to true
     update = { "roundInProgress": true, "cards": cardUpdates }
     
@@ -96,7 +96,7 @@ const signInRouter = require('./routes/sign_in');
 app.use('/sign_in', signInRouter)
 
 //Uncomment below for local testing
-app.listen(3000, () => console.log('Server Started'))
+//app.listen(3000, () => console.log('Server Started'))
 
 //Uncomment below for push
-//app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
