@@ -44,7 +44,7 @@ function setCards(numOfPlayers) {
     var playersCardList = [];
     let startingHandNum = 5;
     var remainingCards = shuffleArray(cards);
-    var faceUpCard;
+    var faceUpCard = [];
 
     // Dynamically creating arrays for players card list
     for ( i = 0; i < numOfPlayers; i++ ) {
@@ -62,7 +62,7 @@ function setCards(numOfPlayers) {
         }
     }
 
-    faceUpCard = remainingCards[remainingCards.length - 1];
+    faceUpCard.push(remainingCards[remainingCards.length - 1]);
     remainingCards.pop();
 
     // Shuffle the hands one more time
