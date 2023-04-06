@@ -62,7 +62,7 @@ function setCards(numOfPlayers) {
         }
     }
 
-    faceUpCard = remainingCards[remainingCards - 1];
+    faceUpCard = remainingCards[remainingCards.length - 1];
     remainingCards.pop();
 
     // Shuffle the hands one more time
