@@ -30,21 +30,23 @@ refPlayers.on('value', async (snapshot) => {
         // Retrieve how many players in table
         var numOfPlayers = Object.keys(data).length;
 
-        if (numOfPlayers > 1) {            
+        if (numOfPlayers > 1) {     
+
             // Check if round is in progress
             var result = await isRoundInProgress();
             if (!result) {
-                startGame(data, numOfPlayers);
+
+            startGame(data, numOfPlayers);
+            } else {
+                // round is in progress, do nothing
             }
         } 
     }
-    
-
     }, (errorObject) => {
     console.log('The read failed: ' + errorObject.name)
 });
 
- async function isRoundInProgress(){
+async function isRoundInProgress(){
      var result = await refIsRoundInProgress.once('value');
      //return result.val();
      return false;
@@ -58,6 +60,7 @@ function startGame(data , numOfPlayers) {
     var playerUids = Object.keys(data)
     
     var cardUpdates = {}
+    var turnOrderUpdate = {}
     var update = {}
 
     // Set the starting hand to players
@@ -67,10 +70,20 @@ function startGame(data , numOfPlayers) {
 
     // Set what the remaining cards are to the dealer
     cardUpdates['dealer'] = _startingHand['deck'];
-    cardUpdates['faceUpCard'] = _startingHand['faceUpCard'];
+    cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
+
+    // TODO: need to find a better solution for this
+    // Set players turn order
+    var turnOrder = startingHand.shuffleArray(playerUids);  
+    turnOrderUpdate['players'] = playerUids;
+    turnOrderUpdate['turnPlayer'] = turnOrder[0];
+
 
     // Update roundInProgress to true
-    update = { "roundInProgress": true, "cards": cardUpdates }
+    update = { 
+        "roundInProgress": true, 
+        "cards": cardUpdates, 
+        "turnOrder": turnOrderUpdate}
     
     refTable.update(update)
         .then(() => { 
@@ -81,10 +94,11 @@ function startGame(data , numOfPlayers) {
         })
 }
 
+// Need to determine players turn,  
+
 app.get('/', async (req, res) => {
     res.send("Welcome to Brick Hold Em API")
 })
-
 
 const tableRouter  = require('./routes/table')
 app.use('/table', tableRouter)
@@ -96,7 +110,7 @@ const signInRouter = require('./routes/sign_in');
 app.use('/sign_in', signInRouter)
 
 //Uncomment below for local testing
-//app.listen(3000, () => console.log('Server Started'))
+app.listen(3000, () => console.log('Server Started'))
 
 //Uncomment below for push
-app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+//app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))

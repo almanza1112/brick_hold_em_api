@@ -95,4 +95,4 @@ function shuffleArray(array) {
     return array;
 }
 
-module.exports = {setCards}
+module.exports = {setCards, shuffleArray}
