@@ -50,12 +50,12 @@ async function isRoundInProgress(){
      var result = await refIsRoundInProgress.once('value');
      //return result.val();
      return false;
-    
 }
 
 function startGame(data , numOfPlayers) {
     // Get starting hand
     var _startingHand = startingHand.setCards(numOfPlayers)
+    var deck =  _startingHand['deck'];
     // Retrieve uids of players
     var playerUids = Object.keys(data)
     
@@ -69,7 +69,7 @@ function startGame(data , numOfPlayers) {
     }
 
     // Set what the remaining cards are to the dealer
-    cardUpdates['dealer'] = _startingHand['deck'];
+    cardUpdates['dealer'] = {"deck" : deck, "deckCount" : deck.length};
     cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
 
     // TODO: need to find a better solution for this

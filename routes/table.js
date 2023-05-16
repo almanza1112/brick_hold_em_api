@@ -38,9 +38,9 @@ router.get('/passturn', async (req, res) => {
         // Update turn player
         await turnRef.update({"turnPlayer":nextTurnPlayer})
             .then((value)=>{
-                res.status(201).json("something went right");
+                res.status(201).json({message: "success"});
             }).catch((err)=>{
-                res.status(201).json("something went wrong");
+                res.status(201).json({message: "error"});
             });
 
     } catch (err) {
