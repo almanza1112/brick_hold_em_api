@@ -19,6 +19,9 @@ var db = firebaseAdmin.database();
 var refTable = db.ref('tables/1')
 var refPlayers = db.ref('tables/1/players');
 var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
+var deckRef = db.ref('tables/1/cards/dealer/deck');
+var deckCountRef = db.ref('tables/1/cards/dealer');
+var playerCardsRef = db.ref('tables/1/cards/playerCards');
 
 // Whenever a player joins the lobby
 refPlayers.on('value', async (snapshot) => {
@@ -28,19 +31,21 @@ refPlayers.on('value', async (snapshot) => {
 
     } else {
         // Retrieve how many players in table
-        var numOfPlayers = Object.keys(data).length;
+        const numOfPlayers = Object.keys(data).length;
 
         if (numOfPlayers > 1) {     
 
             // Check if round is in progress
-            var result = await isRoundInProgress();
+            const result = await isRoundInProgress();
             if (!result) {
 
             startGame(data, numOfPlayers);
             } else {
                 // round is in progress, do nothing
             }
-        } 
+        } else {
+            refTable.update({'roundInProgress' : false});
+        }
     }
     }, (errorObject) => {
     console.log('The read failed: ' + errorObject.name)
@@ -48,8 +53,7 @@ refPlayers.on('value', async (snapshot) => {
 
 async function isRoundInProgress(){
      var result = await refIsRoundInProgress.once('value');
-     //return result.val();
-     return false;
+     return result.val();
 }
 
 function startGame(data , numOfPlayers) {
@@ -57,26 +61,29 @@ function startGame(data , numOfPlayers) {
     var _startingHand = startingHand.setCards(numOfPlayers)
     var deck =  _startingHand['deck'];
     // Retrieve uids of players
-    var playerUids = Object.keys(data)
+    var playerInfo = Object.values(data)
+    console.log(playerInfo[1].uid);
     
     var cardUpdates = {}
+    var playerCards = {}
     var turnOrderUpdate = {}
     var update = {}
 
     // Set the starting hand to players
     for (i = 0; i < numOfPlayers; i++){
-        cardUpdates[playerUids[i]] = {"startingHand": _startingHand['playersCards'][i]};
+        playerCards[playerInfo[i].uid] = {"hand": _startingHand['playersCards'][i]};
     }
 
     // Set what the remaining cards are to the dealer
     cardUpdates['dealer'] = {"deck" : deck, "deckCount" : deck.length};
     cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
+    cardUpdates['playerCards'] = playerCards;
 
     // TODO: need to find a better solution for this
     // Set players turn order
-    var turnOrder = startingHand.shuffleArray(playerUids);  
-    turnOrderUpdate['players'] = playerUids;
-    turnOrderUpdate['turnPlayer'] = turnOrder[0];
+    // var turnOrder = startingHand.shuffleArray(playerUids);  
+    // turnOrderUpdate['players'] = playerUids;
+    // turnOrderUpdate['turnPlayer'] = turnOrder[0];
 
 
     // Update roundInProgress to true
@@ -93,6 +100,43 @@ function startGame(data , numOfPlayers) {
             console.log("ERROR: " + error)
         })
 }
+
+// Listener that updates the number of cards that are left in the deck.
+deckRef.on('value', async (snapshot) => {
+    const list = snapshot.val();
+    // The list of Object keys is equal to the deck count
+    const listLength = list ? Object.keys(list).length : 0;
+
+    deckCountRef.update({'deckCount': listLength})
+        .then(() => {
+            // maybe do something when deckCount gets updated
+        })
+        .catch((err) => {
+            console.log("error with deckCount: " + err)
+        });
+}, (errorObject) => {
+    console.log('The read failed: ' + errorObject.name);
+});
+
+// playerCardsRef.on('value', async (snapshot) => {
+//     const players = snapshot.val();
+//     const playerUids = Object.keys(players);
+
+//     let playerCardCountUpdate ={};
+
+//     for (let i = 0; i < playerUids.length; i++){
+//         var refKey = "players/" + playerUids[i] + "/cardCount";
+//         playerCardCountUpdate[refKey] = players[playerUids[i]].hand.length;
+//     }
+
+//     refTable.update(playerCardCountUpdate).then(() => {
+//         console.log('card count updated')
+//     })
+//     .catch((err) => {
+//         console.log("error updating card count: " + err)
+//     });
+
+// });
 
 // Need to determine players turn,  
 
