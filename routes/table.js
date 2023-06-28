@@ -62,7 +62,8 @@ router.post( '/join', async (req, res) => {
             'uid' : req.body.uid,
             'name' : req.body.name,
             'photoURL' : req.body.photoURL,
-            'username' : req.body.username
+            'username' : req.body.username,
+            'cardCount' : 0
         }
 
         playersRef.get().then((snapshot) => {

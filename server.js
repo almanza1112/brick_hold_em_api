@@ -79,12 +79,16 @@ function startGame(data , numOfPlayers) {
     cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
     cardUpdates['playerCards'] = playerCards;
 
-    // TODO: need to find a better solution for this
-    // Set players turn order
-    // var turnOrder = startingHand.shuffleArray(playerUids);  
-    // turnOrderUpdate['players'] = playerUids;
-    // turnOrderUpdate['turnPlayer'] = turnOrder[0];
+    // Set turn order of players
+    var playerKeys = Object.keys(data);
+    var playersPosition = playerKeys.map(function(str) {
+        return parseInt(str);
+    });
+    var randomPosition = getRandomNumber(playersPosition.length);
+    turnOrderUpdate['players'] = playersPosition;
+    turnOrderUpdate['turnPlayer'] = playersPosition[randomPosition];
 
+    console.log(randomPosition);
 
     // Update roundInProgress to true
     update = { 
@@ -99,6 +103,12 @@ function startGame(data , numOfPlayers) {
         .catch((error) => {
             console.log("ERROR: " + error)
         })
+}
+
+function getRandomNumber(max) {
+  // Generate a random number between 1 and max
+  var randomNumber = Math.floor(Math.random() * max);
+  return randomNumber;
 }
 
 // Listener that updates the number of cards that are left in the deck.
