@@ -22,6 +22,10 @@ var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
 var deckRef = db.ref('tables/1/cards/dealer/deck');
 var deckCountRef = db.ref('tables/1/cards/dealer');
 var playerCardsRef = db.ref('tables/1/cards/playerCards');
+var cardsDiscardPileRef = db.ref('tables/1/cards/discardPile');
+
+// This is because the reference is a list, limitToLast(1) reassures we only get the
+// latest one to be added.
 var movesRef = db.ref('tables/1/moves').limitToLast(1);
 
 // Whenever a player joins the lobby
@@ -88,8 +92,6 @@ function startGame(data , numOfPlayers) {
     turnOrderUpdate['players'] = playersPosition;
     turnOrderUpdate['turnPlayer'] = playersPosition[randomPosition];
 
-    console.log(randomPosition);
-
     // Update roundInProgress to true
     update = { 
         "roundInProgress": true, 
@@ -97,9 +99,6 @@ function startGame(data , numOfPlayers) {
         "turnOrder": turnOrderUpdate}
     
     refTable.update(update)
-        .then(() => { 
-            console.log("SUCCESS")
-        })
         .catch((error) => {
             console.log("ERROR: " + error)
         })
@@ -117,13 +116,53 @@ deckRef.on('value', async (snapshot) => {
     // The list of Object keys is equal to the deck count
     const listLength = list ? Object.keys(list).length : 0;
 
-    deckCountRef.update({'deckCount': listLength})
-        .then(() => {
-            // maybe do something when deckCount gets updated
-        })
-        .catch((err) => {
-            console.log("error with deckCount: " + err)
+    if (listLength > 0) { 
+        deckCountRef.update({'deckCount': listLength})
+            .then(() => {
+                // maybe do something when deckCount gets updated
+            })
+            .catch((err) => {
+                console.log("error with deckCount: " + err)
+            });
+
+           
+    } else {
+        // There are zero cards left in deck, get cards from discardPile
+         cardsDiscardPileRef.get().then((snapshot) => {
+            var discardPile = [];
+
+            snapshot.forEach((childSnapshot) => {
+                var childData = childSnapshot.val();
+                discardPile.push(...childData);
+            });
+
+            var faceUpCard = discardPile[discardPile.length -1];
+
+            discardPile.pop(discardPile.length - 1);        
+          
+            var shuffledDiscardPile = startingHand.shuffleArray(discardPile);
+            deckRef.set(shuffledDiscardPile)
+                .then((value) => {
+                    // Setting the discardPile to the deck is successful.
+                    // Proceed to deleting the discard pile
+                    cardsDiscardPileRef
+                        .remove()
+                        .then((value) => {
+                            // Deleting discard pile is successful, proceed to 
+                            // push faceUpCard as the new and only entry of the
+                            // discardPile
+                            cardsDiscardPileRef
+                                .push()
+                                .set({0:faceUpCard})
+                                .catch((err) => {
+                                    console.log("Error updating discardPile", err)
+                                });
+                        });
+                });
         });
+    }
+
+   
 }, (errorObject) => {
     console.log('The read failed: ' + errorObject.name);
 });
@@ -141,7 +180,7 @@ playerCardsRef.on('value', async (snapshot) => {
     }
 
     refTable.update(playerCardCountUpdate).then(() => {
-        console.log('card count updated')
+        // maybe do something here?
     })
     .catch((err) => {
         console.log("error updating card count: " + err)
@@ -152,10 +191,16 @@ playerCardsRef.on('value', async (snapshot) => {
 // Listener for moves 
 movesRef.on('value', async (snapshot) => {
     snapshot.forEach((childSnapshot) => {
-    console.log(childSnapshot.key);
-    var childKey = childSnapshot.key;
-    var childData = childSnapshot.val();
-   
+        var childData = childSnapshot.val();
+        
+        var newDiscardPile = cardsDiscardPileRef.push();
+
+        newDiscardPile.set(childData["move"])
+            .then((value) => {
+            })
+            .catch((err) => {
+                console.log("error newDiscardPile: " + err)
+            });
   });
 });
 
