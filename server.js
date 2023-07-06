@@ -22,6 +22,7 @@ var refIsRoundInProgress = db.ref('tables/1/roundInProgress')
 var deckRef = db.ref('tables/1/cards/dealer/deck');
 var deckCountRef = db.ref('tables/1/cards/dealer');
 var playerCardsRef = db.ref('tables/1/cards/playerCards');
+var movesRef = db.ref('tables/1/moves').limitToLast(1);
 
 // Whenever a player joins the lobby
 refPlayers.on('value', async (snapshot) => {
@@ -62,7 +63,6 @@ function startGame(data , numOfPlayers) {
     var deck =  _startingHand['deck'];
     // Retrieve uids of players
     var playerInfo = Object.values(data)
-    console.log(playerInfo[1].uid);
     
     var cardUpdates = {}
     var playerCards = {}
@@ -71,7 +71,7 @@ function startGame(data , numOfPlayers) {
 
     // Set the starting hand to players
     for (i = 0; i < numOfPlayers; i++){
-        playerCards[playerInfo[i].uid] = {"hand": _startingHand['playersCards'][i]};
+        playerCards[playerInfo[i].uid] = {"hand": _startingHand['playersCards'][i], "position" : playerInfo[i].position};
     }
 
     // Set what the remaining cards are to the dealer
@@ -128,27 +128,36 @@ deckRef.on('value', async (snapshot) => {
     console.log('The read failed: ' + errorObject.name);
 });
 
-// playerCardsRef.on('value', async (snapshot) => {
-//     const players = snapshot.val();
-//     const playerUids = Object.keys(players);
+// Listener that updates card counts
+playerCardsRef.on('value', async (snapshot) => {
+    const players = snapshot.val();
+    const playerUids = Object.keys(players);
 
-//     let playerCardCountUpdate ={};
+    let playerCardCountUpdate ={};
 
-//     for (let i = 0; i < playerUids.length; i++){
-//         var refKey = "players/" + playerUids[i] + "/cardCount";
-//         playerCardCountUpdate[refKey] = players[playerUids[i]].hand.length;
-//     }
+    for (let i = 0; i < playerUids.length; i++){
+        var refKey = "players/" + players[playerUids[i]].position + "/cardCount";
+        playerCardCountUpdate[refKey] = players[playerUids[i]].hand.length;
+    }
 
-//     refTable.update(playerCardCountUpdate).then(() => {
-//         console.log('card count updated')
-//     })
-//     .catch((err) => {
-//         console.log("error updating card count: " + err)
-//     });
+    refTable.update(playerCardCountUpdate).then(() => {
+        console.log('card count updated')
+    })
+    .catch((err) => {
+        console.log("error updating card count: " + err)
+    });
 
-// });
+});
 
-// Need to determine players turn,  
+// Listener for moves 
+movesRef.on('value', async (snapshot) => {
+    snapshot.forEach((childSnapshot) => {
+    console.log(childSnapshot.key);
+    var childKey = childSnapshot.key;
+    var childData = childSnapshot.val();
+   
+  });
+});
 
 app.get('/', async (req, res) => {
     res.send("Welcome to Brick Hold Em API")

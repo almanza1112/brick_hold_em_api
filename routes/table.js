@@ -51,7 +51,7 @@ router.get('/passturn', async (req, res) => {
             });
 
     } catch (err) {
-
+        res.status(500).json({message : err});
     }
 })
 
@@ -63,6 +63,7 @@ router.post( '/join', async (req, res) => {
             'name' : req.body.name,
             'photoURL' : req.body.photoURL,
             'username' : req.body.username,
+            'chips' : parseInt(req.body.chips),
             'cardCount' : 0
         }
 
