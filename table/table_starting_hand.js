@@ -74,7 +74,7 @@ var cards = [
 
 function setCards(numOfPlayers) {
     var playersCardList = [];
-    let startingHandNum = 5;
+    let startingHandNum = 2;
     var remainingCards = shuffleArray(cards);
     var faceUpCard = [];
 

@@ -23,6 +23,7 @@ var deckRef = db.ref('tables/1/cards/dealer/deck');
 var deckCountRef = db.ref('tables/1/cards/dealer');
 var playerCardsRef = db.ref('tables/1/cards/playerCards');
 var cardsDiscardPileRef = db.ref('tables/1/cards/discardPile');
+var winnerRef = db.ref('tables/1/winner');
 
 // This is because the reference is a list, limitToLast(1) reassures we only get the
 // latest one to be added.
@@ -96,7 +97,9 @@ function startGame(data , numOfPlayers) {
     update = { 
         "roundInProgress": true, 
         "cards": cardUpdates, 
-        "turnOrder": turnOrderUpdate}
+        "turnOrder": turnOrderUpdate,
+        "winner" : "none",
+    }
     
     refTable.update(update)
         .catch((error) => {
@@ -174,15 +177,25 @@ playerCardsRef.on('value', async (snapshot) => {
 
     let playerCardCountUpdate ={};
 
-    for (let i = 0; i < playerUids.length; i++){
+    for (let i = 0; i < playerUids.length; i++){          
         var refKey = "players/" + players[playerUids[i]].position + "/cardCount";
-        playerCardCountUpdate[refKey] = players[playerUids[i]].hand.length;
-    }
+        var cardCount = players[playerUids[i]].hand;
 
+        // if cardCount is not undefined, there is not winner, continue with update
+        if (cardCount !== undefined){
+            playerCardCountUpdate[refKey] = cardCount.length;
+        } else {
+            // There is a cardCount that is undefined, there is a winner.
+            // Proceed to update cardCount of player to 0 and update winner
+            playerCardCountUpdate[refKey] = 0;
+            playerCardCountUpdate["winner"] = playerUids[i];
+        }
+    }
+   
     refTable.update(playerCardCountUpdate).then(() => {
-        // maybe do something here?
+            // maybe do something here?
     })
-    .catch((err) => {
+    .catch((err) => {            
         console.log("error updating card count: " + err)
     });
 
