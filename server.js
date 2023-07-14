@@ -44,9 +44,12 @@ refPlayers.on('value', async (snapshot) => {
             // Check if round is in progress
             const result = await isRoundInProgress();
             if (!result) {
+        console.log(1);
 
             startGame(data, numOfPlayers);
             } else {
+                        console.log(2);
+
                 // round is in progress, do nothing
             }
         } else {
@@ -175,7 +178,7 @@ playerCardsRef.on('value', async (snapshot) => {
     const players = snapshot.val();
     const playerUids = Object.keys(players);
 
-    let playerCardCountUpdate ={};
+    let update = {};
 
     for (let i = 0; i < playerUids.length; i++){          
         var refKey = "players/" + players[playerUids[i]].position + "/cardCount";
@@ -183,16 +186,17 @@ playerCardsRef.on('value', async (snapshot) => {
 
         // if cardCount is not undefined, there is not winner, continue with update
         if (cardCount !== undefined){
-            playerCardCountUpdate[refKey] = cardCount.length;
+            update[refKey] = cardCount.length;
         } else {
             // There is a cardCount that is undefined, there is a winner.
             // Proceed to update cardCount of player to 0 and update winner
-            playerCardCountUpdate[refKey] = 0;
-            playerCardCountUpdate["winner"] = playerUids[i];
+            update[refKey] = 0;
+            update["winner"] = playerUids[i];
+            update["roundInProgress"] = false;
         }
     }
    
-    refTable.update(playerCardCountUpdate).then(() => {
+    refTable.update(update).then(() => {
             // maybe do something here?
     })
     .catch((err) => {            
@@ -216,6 +220,16 @@ movesRef.on('value', async (snapshot) => {
             });
   });
 });
+
+winnerRef.on('value', async (snapshot) => {
+    var winner = snapshot.val();
+    if(winner !== 'none'){
+        await delay(5000);
+        var none = "none";
+        refTable.update({"winner":"none"});
+    } 
+});
+const delay = ms => new Promise(res => setTimeout(res, ms));
 
 app.get('/', async (req, res) => {
     res.send("Welcome to Brick Hold Em API")
