@@ -44,11 +44,9 @@ refPlayers.on('value', async (snapshot) => {
             // Check if round is in progress
             const result = await isRoundInProgress();
             if (!result) {
-        console.log(1);
 
             startGame(data, numOfPlayers);
             } else {
-                        console.log(2);
 
                 // round is in progress, do nothing
             }
@@ -84,8 +82,9 @@ function startGame(data , numOfPlayers) {
 
     // Set what the remaining cards are to the dealer
     cardUpdates['dealer'] = {"deck" : deck, "deckCount" : deck.length};
-    cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
+    //cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
     cardUpdates['playerCards'] = playerCards;
+    var firstCardOnDiscard = _startingHand['faceUpCard'][0];
 
     // Set turn order of players
     var playerKeys = Object.keys(data);
@@ -103,11 +102,30 @@ function startGame(data , numOfPlayers) {
         "turnOrder": turnOrderUpdate,
         "winner" : "none",
     }
+    console.log(1)
     
-    refTable.update(update)
-        .catch((error) => {
-            console.log("ERROR: " + error)
+        try {
+            refTable.update(update)
+        .then((value) => {
+            console.log(2)
+            var newDiscardPile = cardsDiscardPileRef.push();
+
+            newDiscardPile.set({0:firstCardOnDiscard})
+            .then((value) => {
+                console.log(3)
+            })
+            .catch((err) => {
+                console.log(6)
+                console.log("error newDiscardPile: " + err)
+            });
         })
+        .catch((error) => {
+            console.log(4)
+            console.log("ERROR: " + error)
+        });
+        } catch(err){
+            console.log("ERRORRRRR", err);
+        }
 }
 
 function getRandomNumber(max) {
@@ -192,7 +210,7 @@ playerCardsRef.on('value', async (snapshot) => {
             // Proceed to update cardCount of player to 0 and update winner
             update[refKey] = 0;
             update["winner"] = playerUids[i];
-            update["roundInProgress"] = false;
+            //update["roundInProgress"] = false; // TODO: is this needed?
         }
     }
    
@@ -225,7 +243,6 @@ winnerRef.on('value', async (snapshot) => {
     var winner = snapshot.val();
     if(winner !== 'none'){
         await delay(5000);
-        var none = "none";
         refTable.update({"winner":"none"});
     } 
 });
