@@ -80,9 +80,9 @@ function startGame(data , numOfPlayers) {
         playerCards[playerInfo[i].uid] = {"hand": _startingHand['playersCards'][i], "position" : playerInfo[i].position};
     }
 
+
     // Set what the remaining cards are to the dealer
     cardUpdates['dealer'] = {"deck" : deck, "deckCount" : deck.length};
-    //cardUpdates['faceUpCard'] = _startingHand['faceUpCard'][0];
     cardUpdates['playerCards'] = playerCards;
     var firstCardOnDiscard = _startingHand['faceUpCard'][0];
 
@@ -199,7 +199,7 @@ playerCardsRef.on('value', async (snapshot) => {
     let update = {};
 
     for (let i = 0; i < playerUids.length; i++){          
-        var refKey = "players/" + players[playerUids[i]].position + "/cardCount";
+        var refKey = "cards/playerCards/" + playerUids[i] + "/cardCount";
         var cardCount = players[playerUids[i]].hand;
 
         // if cardCount is not undefined, there is not winner, continue with update
