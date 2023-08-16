@@ -1,150 +1,322 @@
-const express = require('express');
+const express = require("express");
 const router = express();
 
 router.use(express.json());
-router.use(express.urlencoded({extended: true}));
+router.use(express.urlencoded({ extended: true }));
 
-const cards = require('../table/table_starting_hand')
+const cards = require("../table/table_starting_hand");
 
 var firebaseAdmin = require("firebase-admin");
 var db = firebaseAdmin.database();
-var turnRef = db.ref('tables/1/turnOrder');
-var playersRef = db.ref('tables/1/players');
-var playerQueueRef = db.ref('tables/1/playerQueue');
+var turnRef = db.ref("tables/1/turnOrder");
+var playersRef = db.ref("tables/1/players");
+var playerQueueRef = db.ref("tables/1/playerQueue");
+var tableRef = db.ref("tables/1/");
+var playerHandRef = db.ref("tables/1/cards/playerCards/");
+var foldedHandsRef = db.ref("tables/1/cards/foldedHands");
+var betsRef = db.ref("tables/1/chips/bets");
+var chipsRef = db.ref("tables/1/chips");
+
+const messageServerError = "Invalid server error.";
 
 // Getting all
-router.get('/', async (req, res) => {
-    try {
-        //const users = await User.find()
-        //console.log(cards.shuffle())
-        res.status(201).json({'cards':'brb'})
-    } catch (err) {
-        res.status(500).json({ message: err.message })
+router.get("/", async (req, res) => {
+  try {
+    //const users = await User.find()
+    //console.log(cards.shuffle())
+    res.status(201).json({ cards: "brb" });
+  } catch (err) {
+    res.status(500).json({ message: messageServerError });
+  }
+});
+
+router.get("/passturn", async (req, res) => {
+  try {
+    var snapshot = await turnRef.once("value");
+    var data = snapshot.val();
+    var playersList = data["players"];
+    var turnPlayer = data["turnPlayer"];
+    var currentIndex = playersList.indexOf(turnPlayer);
+    var nextTurnIndex = currentIndex + 1;
+
+    var nextTurnPlayer;
+
+    // Check if player index is at the end of array
+    if (nextTurnIndex < playersList.length) {
+      nextTurnPlayer = playersList[nextTurnIndex];
+    } else {
+      nextTurnPlayer = playersList[0];
     }
-})
 
-router.get('/passturn', async (req, res) => {
-    try {
-        var snapshot = await turnRef.once('value');
-        var data = snapshot.val();
-        var playersList = data['players'];
-        var turnPlayer = data['turnPlayer'];
-        var currentIndex = playersList.indexOf(turnPlayer);
-        var nextTurnIndex = currentIndex + 1;
+    // Update turn player
+    // TODO: need to update status codes
+    await turnRef
+      .update({ turnPlayer: nextTurnPlayer })
+      .then((value) => {
+        res.status(201).json({ message: "success" });
+      })
+      .catch((err) => {
+        res.status(201).json({ message: "error" });
+      });
+  } catch (err) {
+    res.status(500).json({ message: messageServerError });
+  }
+});
 
-        var nextTurnPlayer;
+router.post("/join", async (req, res) => {
+  try {
+    const player = {
+      uid: req.body.uid,
+      name: req.body.name,
+      photoURL: req.body.photoURL,
+      username: req.body.username,
+    };
 
-        // Check if player index is at the end of array
-        if (nextTurnIndex < playersList.length){
-            nextTurnPlayer = playersList[nextTurnIndex];
+    playersRef
+      .get()
+      .then((snapshot) => {
+        if (snapshot.exists()) {
+          // Get snapshot
+          var data = snapshot.val();
+
+          // Get object keys = player count
+          var keys = Object.keys(data);
+
+          // Check if user is already in the game. If he
+          // is than litreally do nothing
+          for (var i = 0; i < keys.length; i++) {
+            if (data[keys[i]]["uid"] === req.body.uid) {
+              return res
+                .status(201)
+                .json({ message: "Player is already in game." });
+            }
+          }
+
+          // convert elements in keys array into int
+          const keysInt = keys.map(function (element) {
+            return parseInt(element, 10);
+          });
+
+          // pass new array of int into function that determines position
+          var position = determinePosition(keysInt);
+
+          if (keys.length < 6) {
+            // There is less than 6 players, add player to game
+            var playerJoiningUpdate = {};
+            playerJoiningUpdate["chips/" + player["uid"] + "/chipCount"] =
+              parseInt(req.body.chips);
+
+            player["position"] = position;
+            playerJoiningUpdate["players/" + position] = player;
+
+            tableRef
+              .update(playerJoiningUpdate)
+              .then((value) => {
+                // TODO: do i really need to pass the position?
+                res.status(201).json({
+                  position: position,
+                  message: "Player added to table.",
+                });
+              })
+              .catch((error) => {
+                console.log("Error adding player to table: " + error);
+                res
+                  .status(500)
+                  .json({ message: "Error adding player to the table." });
+              });
+          } else {
+            // There is more than 6 players in game, add player to queue
+            playerQueueRef
+              .update(player)
+              .then((value) => {
+                res.status(201).json({ message: "Player added to queue." });
+              })
+              .catch((error) => {
+                console.log("Error updating player queue: " + error);
+                res
+                  .status(500)
+                  .json({ message: "Error adding player to queue." });
+              });
+          }
         } else {
-            nextTurnPlayer = playersList[0];
-        }   
+          console.log("no data available");
+          return res.status(500).json({ message: "No data available." });
+        }
+      })
+      .catch((error) => {
+        console.log(error);
+        res
+          .status(500)
+          .json({ message: "Error getting players info from table." });
+      });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: messageServerError });
+  }
+});
 
-        // Update turn player
-        // TODO: need to update status codes
-        await turnRef.update({"turnPlayer":nextTurnPlayer})
-            .then((value)=>{
-                res.status(201).json({message: "success"});
-            }).catch((err)=>{
-                res.status(201).json({message: "error"});
+router.post("/foldhand", async (req, res) => {
+  try {
+    const uid = req.body.uid;
+    const position = req.body.position;
+
+    playerHandRef
+      .child(uid)
+      .get()
+      .then((snapshot) => {
+        if (snapshot.exists()) {
+          // Get snapshot data
+          var data = snapshot.val();
+
+          // Get hand
+          var hand = data["hand"];
+
+          // Push hand into foldedHands list
+          var newPostRef = foldedHandsRef.push();
+          newPostRef
+            .set(hand)
+            .then(() => {
+              // Update player to them being folded
+              var playerUpdate = { folded: true };
+              playersRef
+                .child(position)
+                .update(playerUpdate)
+                .then(() => {
+                  // Once complete return success
+                  res.status(201).json({ message: "success" });
+                })
+                .catch((error) => {
+                  console.log(error);
+                  res
+                    .status(500)
+                    .json({ message: "Error updating players to folded." });
+                });
+            })
+            .catch((error) => {
+              console.log(error);
+              res
+                .status(500)
+                .json({ message: "Error pushing into foldedHands list." });
+            });
+        } else {
+          res.status(500).json({ message: "No data available." });
+        }
+      })
+      .catch((error) => {
+        console.log(error);
+        res
+          .status(500)
+          .json({
+            message: "Error getting the hand of player with uid:" + uid,
+          });
+      });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: messageServerError });
+  }
+});
+
+router.post("/raiseBet", async (req, res) => {
+  try {
+    const bet = req.body.bet;
+    const uid = req.body.uid;
+    const position = req.body.position;
+
+    console.log(req.body);
+
+    chipsRef
+      .child(uid)
+      .get()
+      .then((snapshot) => {
+        if (snapshot.exists) {
+          // Get data
+          var data = snapshot.val();
+
+          // Get current chipCount
+          var chipCount = data["chipCount"];
+
+          // Assign new chipCount
+          var newChipCount = chipCount - bet;
+
+          var chipCountUpdate = { chipCount: newChipCount };
+
+          // Update chipCount
+          chipsRef
+            .child(uid)
+            .update(chipCountUpdate)
+            .then(() => {
+              // Success, proceed to push into bets
+              var newBetsPostRef = betsRef.push();
+
+              var betsPost = {
+                type: "raise",
+                bet: bet,
+                uid: uid,
+                position: position,
+              };
+
+              newBetsPostRef
+                .set(betsPost)
+                .then(() => {
+                  res.status(201).json({ message: "success" });
+                })
+                .catch((err) => {
+                  console.log(err);
+                  res
+                    .status(500)
+                    .json({
+                      message: "Error posting new bet for player uid: " + uid,
+                    });
+                });
+            })
+            .catch((error) => {
+              console.log(error);
+              res.status(500).json({
+                message:
+                  "Error getting the information of player at position :" +
+                  position +
+                  " with uid:" +
+                  uid,
+              });
             });
 
-    } catch (err) {
-        res.status(500).json({message : err});
-    }
-})
-
-router.post( '/join', async (req, res) => {
-                    
-    try {
-        const player = {
-            'uid' : req.body.uid,
-            'name' : req.body.name,
-            'photoURL' : req.body.photoURL,
-            'username' : req.body.username,
-            'chips' : parseInt(req.body.chips),
-            'cardCount' : 0
+          console.log(chipCount);
+        } else {
+          res.status(500).json({
+            message: "No chips data avaiable of player with uid: " + uid,
+          });
         }
-
-        playersRef.get().then((snapshot) => {
-            if (snapshot.exists()){
-                // Get snapshot
-                var data = snapshot.val();
-
-                // Get object keys = player count
-                var keys = Object.keys(data);
-
-                // Check if user is already in the game. If he
-                // is than litreally do nothing
-                for(var i = 0; i < keys.length; i++) {
-                    if (data[keys[i]]['uid'] === req.body.uid) {
-                        return res.status(201).json({message: "Player is already in game."});
-                    }
-                }
-                
-                // convert elements in keys array into int
-                const keysInt = keys.map(function(element) {
-                    return parseInt(element, 10);
-                });
-                   
-                // pass new array of int into function that determines position
-                var position = determinePosition(keysInt);
-        
-                if (keys.length < 6) {
-                    // There is less than 6 players, add player to game
-                    player['position'] = position;
-                    playersRef.child(position)
-                        .update(player)
-                        .then((value) => {
-                            // TODO: do i really need to pass the position?
-                            res.status(201).json({position: position, message: "Player added to table."});
-                        })
-                        .catch((error) => {
-                            console.log("Error adding player to table: " + error);
-                            res.status(500).json({ message: 'Error adding player to the table.' });
-                        });
-                } else {
-                    // There is more than 6 players in game, add player to queue
-                    playerQueueRef.update(player)
-                        .then((value) => {
-                            res.status(201).json({message : 'Player added to queue.'});                            })
-                        .catch((error) => { 
-                            console.log("Error updating player queue: " + error);
-                            res.status(500).json({ message: 'Error adding player to queue.' });
-                        });
-                    }
-            } else {
-                console.log("no data available");
-                return res.status(500).json({ message: 'No data available.' });
-            }
-        }).catch((error) => {
-            console.log(error)
-            res.status(500).json({ message: 'Error getting players info from table.' });
-
+      })
+      .catch((error) => {
+        console.log(error);
+        res.status(500).json({
+          message:
+            "Error getting the information of player at position :" +
+            position +
+            " with uid:" +
+            uid,
         });
+      });
+  } catch (err) {
+    console.log(err);
+    res.status(500).json({ message: messageServerError });
+  }
+});
 
-    } catch (err) {
-        console.log(err);
-        res.status(500).json({ message: 'Internal server error.' });
-    }
+function determinePosition(array) {
+  // Passing array as an argument which is the Object keys as ints
 
-})
+  // Sort array
+  array.sort();
 
-function determinePosition(array){
-    // Passing array as an argument which is the Object keys as ints
-    
-    // Sort array
-    array.sort();
+  // Determine the first available position
+  let index = 0;
+  while (index < array.length && array[index] === index + 1) {
+    index++;
+  }
 
-    // Determine the first available position
-    let index = 0;
-    while (index < array.length && array[index] === index + 1) {
-        index++;       
-    }
-
-    // Returning index + 1 since players position are 1 - 6 (array 0 - 5)
-    return index + 1;
+  // Returning index + 1 since players position are 1 - 6 (array 0 - 5)
+  return index + 1;
 }
 
-module.exports = router
+module.exports = router;
