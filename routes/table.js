@@ -14,8 +14,9 @@ var playerQueueRef = db.ref("tables/1/playerQueue");
 var tableRef = db.ref("tables/1/");
 var playerHandRef = db.ref("tables/1/cards/playerCards/");
 var foldedHandsRef = db.ref("tables/1/cards/foldedHands");
-var betsRef = db.ref("tables/1/chips/bets");
+var betsRef = db.ref("tables/1/betting/bets");
 var chipsRef = db.ref("tables/1/chips");
+var movesRef = db.ref("tables/1/moves");
 
 const messageServerError = "Invalid server error.";
 
@@ -265,7 +266,7 @@ router.post("/raiseBet", async (req, res) => {
                   res
                     .status(500)
                     .json({
-                      message: "Error posting new bet for player uid: " + uid,
+                      message: "Error posting new bet for player with uid: " + uid,
                     });
                 });
             })
@@ -302,6 +303,52 @@ router.post("/raiseBet", async (req, res) => {
     res.status(500).json({ message: messageServerError });
   }
 });
+
+router.post("/playCards", async (req, res) => {
+  try {
+    console.log(req.body);
+    var uid = req.body.uid;
+    var move = req.body.move;
+    var cardsInHand = req.body.cardsInHand;
+
+    // Removes the brackets surronding the move string array 
+    var trimmedMoveString = move.slice(1, -1);
+    var trimmedCardsInHandString = cardsInHand.slice(1, -1);
+
+    // Convert string into array
+    var moveArray = trimmedMoveString.split(",");
+    var cardsInHandArray = trimmedCardsInHandString.split(",");
+
+    var newMovesPost = movesRef.push();
+
+    var moveUpdate = {
+      uid: uid,
+      move: moveArray
+    }
+
+    newMovesPost.set(moveUpdate).then((_) => {
+      // New move posted successfully
+
+      var cardsInHandUpdate = {}
+      cardsInHandUpdate["cards/playerCards/" + uid+ "/hand"] = cardsInHandArray;
+      // Update cards in hand 
+      tableRef.update(cardsInHandUpdate).then(() => {
+        // Cards in hand update success
+        res.status(201).json({message: "Success"});
+      });
+
+    }).catch((error) => {
+      console.log("Error setting post in newMovesPost: ", error);
+          res.status(500).json({ message: "Error setting new moves post." });
+
+    });
+
+  } catch (err) {
+    console.log("Error in /playCards", err);
+    res.status(500).json({ message: messageServerError });
+  }
+});
+
 
 function determinePosition(array) {
   // Passing array as an argument which is the Object keys as ints
