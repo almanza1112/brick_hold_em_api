@@ -310,17 +310,43 @@ router.post("/playCards", async (req, res) => {
     var uid = req.body.uid;
     var move = req.body.move;
     var cardsInHand = req.body.cardsInHand;
+    var isThereABet = JSON.parse(req.body.isThereABet);
+    var betObject;
 
+    if (isThereABet == true) {
+      betObject = JSON.parse(req.body.bet);
+    } 
+  
     // Removes the brackets surronding the move string array 
     var trimmedMoveString = move.slice(1, -1);
     var trimmedCardsInHandString = cardsInHand.slice(1, -1);
 
     // Convert string into array
-    var moveArray = trimmedMoveString.split(",");
-    var cardsInHandArray = trimmedCardsInHandString.split(",");
+    var moveArray = trimmedMoveString.split(", ");
+    var cardsInHandArray = trimmedCardsInHandString.split(", ");
 
+
+    // Get the turn order information
+    var snapshot = await turnRef.once("value");
+    var data = snapshot.val();
+    var playersList = data["players"];
+    var turnPlayer = data["turnPlayer"];
+    var currentIndex = playersList.indexOf(turnPlayer);
+    var nextTurnIndex = currentIndex + 1;
+
+    var nextTurnPlayer;
+
+    // Check if player index is at the end of array
+    if (nextTurnIndex < playersList.length) {
+      nextTurnPlayer = playersList[nextTurnIndex];
+    } else {
+      nextTurnPlayer = playersList[0];
+    }
+
+    // Creating variable for new post of moves
     var newMovesPost = movesRef.push();
 
+    // Move update created
     var moveUpdate = {
       uid: uid,
       move: moveArray
@@ -329,12 +355,24 @@ router.post("/playCards", async (req, res) => {
     newMovesPost.set(moveUpdate).then((_) => {
       // New move posted successfully
 
-      var cardsInHandUpdate = {}
-      cardsInHandUpdate["cards/playerCards/" + uid+ "/hand"] = cardsInHandArray;
+      // Create update for new hand and new turn player
+      var update = {}
+      update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
+      update["turnOrder/turnPlayer"] = nextTurnPlayer; 
+
+      if(isThereABet == true){
+        if(betObject['type'] == 'raise'){
+          update["betting/toCall"] = {
+            uid: uid,
+            amount: betObject['amount']
+          };
+        }
+      }
+
       // Update cards in hand 
-      tableRef.update(cardsInHandUpdate).then(() => {
+      tableRef.update(update).then(() => {
         // Cards in hand update success
-        res.status(201).json({message: "Success"});
+        res.status(201).json({ message: "Success" });
       });
 
     }).catch((error) => {
