@@ -1,5 +1,8 @@
 const express = require("express");
 const app = express();
+const bodyParser = require("body-parser"); // TODO: do I really need this?
+app.use(bodyParser.json()); 
+app.use(bodyParser.urlencoded({ extended: true }));
 
 // TODO: need to remove this eventually
 const startingHand = require("./table/table_starting_hand");
