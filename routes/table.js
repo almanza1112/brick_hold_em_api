@@ -363,6 +363,7 @@ router.post("/playCards", async (req, res) => {
       if(isThereABet == true){
         if(betObject['type'] == 'raise'){
           update["betting/toCall"] = {
+            didAFullCircle: false,
             uid: uid,
             amount: betObject['amount']
           };
