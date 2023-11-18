@@ -336,10 +336,12 @@ router.post("/playCards", async (req, res) => {
 
     var nextTurnPlayer;
 
-    // Check if player index is at the end of array
+    // Check if next player index is at the end of array
     if (nextTurnIndex < playersList.length) {
+      // Next player index is NOT at the end of array
       nextTurnPlayer = playersList[nextTurnIndex];
     } else {
+      // Next player index is at the end of array, start from beginning 
       nextTurnPlayer = playersList[0];
     }
 
@@ -360,6 +362,7 @@ router.post("/playCards", async (req, res) => {
       update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
       update["turnOrder/turnPlayer"] = nextTurnPlayer; 
 
+      // Check if there was a bet placed
       if(isThereABet == true){
         if(betObject['type'] == 'raise'){
           update["betting/toCall"] = {
@@ -367,6 +370,10 @@ router.post("/playCards", async (req, res) => {
             uid: uid,
             amount: betObject['amount']
           };
+          
+          // Add bet amount to the pot
+          update['betting/pot/pot1'] = firebaseAdmin.database.ServerValue.increment(parseInt(betObject['amount']));
+
         }
       }
 
