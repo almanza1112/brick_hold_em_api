@@ -93,8 +93,15 @@ function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousT
   // Get starting hand
   var _startingHand = startingHand.setCards(numOfPlayers);
   var deck = _startingHand["deck"];
-  // Retrieve uids of players
+  // Retrieve positions of players
   var playerInfo = Object.values(data);
+  var playerPositions = Object.keys(data);
+
+  // Resetting folded variables of players to false
+  var update = {};
+  for(i = 0; i < numOfPlayers; i++) {
+    update["players/"+ playerPositions[i] + "/folded"] = false;  
+  }
 
   var cardUpdates = {};
   var playerCards = {};
@@ -149,19 +156,22 @@ function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousT
     turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomPosition];
   }
 
-  var update = {
-    roundInProgress: true,
-    cards: cardUpdates,
-    turnOrder: turnOrderUpdate,
-    winner: "none",
+  // Restarting betting data
+  var bettingUpdate = {
+    pot: {
+      pot1: 0,
+      potCount: 1
+    }
+  }
 
-    // TODO: this needs to go somewhere else, possibly label
-    // the path like tables/[small blind]_[big blind]/1/etc...
-    blinds: {
-      small: 2,
-      big: 4,
-    },
-  };
+  update['roundInProgress'] = true;
+  update['cards'] = cardUpdates;
+  update['turnOrder'] = turnOrderUpdate;
+  update['betting'] = bettingUpdate;
+  update['winner'] = 'none';
+
+  // This will be put somewhere else in the future
+  update['blinds'] = {small:2, big:4};
 
   try {
     refTable
