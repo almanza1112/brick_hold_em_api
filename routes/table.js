@@ -8,12 +8,12 @@ const cards = require("../table/table_starting_hand");
 
 var firebaseAdmin = require("firebase-admin");
 var db = firebaseAdmin.database();
+var fs = firebaseAdmin.firestore();
 var turnRef = db.ref("tables/1/turnOrder");
 var playersRef = db.ref("tables/1/players");
 var tableRef = db.ref("tables/1/");
 var playerHandRef = db.ref("tables/1/cards/playerCards/");
 var foldedHandsRef = db.ref("tables/1/cards/foldedHands");
-var betsRef = db.ref("tables/1/betting/bets");
 var chipsRef = db.ref("tables/1/chips");
 var movesRef = db.ref("tables/1/moves");
 var isRoundInProgressRef = db.ref("tables/1/roundInProgress");
@@ -283,103 +283,34 @@ router.post("/foldhand", async (req, res) => {
   }
 });
 
-router.post("/raiseBet", async (req, res) => {
-  try {
-    const bet = req.body.bet;
-    const uid = req.body.uid;
-    const position = req.body.position;
-
-    console.log(req.body);
-
-    chipsRef
-      .child(uid)
-      .get()
-      .then((snapshot) => {
-        if (snapshot.exists) {
-          // Get data
-          var data = snapshot.val();
-
-          // Get current chipCount
-          var chipCount = data["chipCount"];
-
-          // Assign new chipCount
-          var newChipCount = chipCount - bet;
-
-          var chipCountUpdate = { chipCount: newChipCount };
-
-          // Update chipCount
-          chipsRef
-            .child(uid)
-            .update(chipCountUpdate)
-            .then(() => {
-              // Success, proceed to push into bets
-              var newBetsPostRef = betsRef.push();
-
-              var betsPost = {
-                type: "raise",
-                bet: bet,
-                uid: uid,
-                position: position,
-              };
-
-              newBetsPostRef
-                .set(betsPost)
-                .then(() => {
-                  res.status(201).json({ message: "success" });
-                })
-                .catch((err) => {
-                  console.log(err);
-                  res.status(500).json({
-                    message:
-                      "Error posting new bet for player with uid: " + uid,
-                  });
-                });
-            })
-            .catch((error) => {
-              console.log(error);
-              res.status(500).json({
-                message:
-                  "Error getting the information of player at position :" +
-                  position +
-                  " with uid:" +
-                  uid,
-              });
-            });
-
-          console.log(chipCount);
-        } else {
-          res.status(500).json({
-            message: "No chips data avaiable of player with uid: " + uid,
-          });
-        }
-      })
-      .catch((error) => {
-        console.log(error);
-        res.status(500).json({
-          message:
-            "Error getting the information of player at position :" +
-            position +
-            " with uid:" +
-            uid,
-        });
-      });
-  } catch (err) {
-    console.log(err);
-    res.status(500).json({ message: messageServerError });
-  }
-});
-
 router.post("/playCards", async (req, res) => {
   try {
-    console.log(req.body);
     var uid = req.body.uid;
     var move = req.body.move;
     var cardsInHand = req.body.cardsInHand;
+    var position = req.body.position;
     var isThereABet = JSON.parse(req.body.isThereABet);
     var betObject;
+    var update = {};
 
+    // Check if there was a bet placed
     if (isThereABet == true) {
       betObject = JSON.parse(req.body.bet);
+
+      if (betObject["type"] == "raise") {
+        update["betting/toCall"] = {
+          didAFullCircle: false,
+          uid: uid,
+          amount: betObject["amount"],
+          position: position,
+        };
+
+        // Add bet amount to the pot
+        update["betting/pot/pot1"] =
+          firebaseAdmin.database.ServerValue.increment(
+            parseInt(betObject["amount"])
+          );
+      }
     }
 
     // Removes the brackets surronding the move string array
@@ -409,51 +340,35 @@ router.post("/playCards", async (req, res) => {
       nextTurnPlayer = playersList[0];
     }
 
-    // Creating variable for new post of moves
+    // Create new post to push into Moves list
     var newMovesPost = movesRef.push();
 
-    // Move update created
+    // Create muve update
     var moveUpdate = {
       uid: uid,
       move: moveArray,
     };
 
-    newMovesPost
-      .set(moveUpdate)
-      .then((_) => {
-        // New move posted successfully
+    // Add move update
+    update["moves/" + newMovesPost.key] = moveUpdate;
 
-        // Create update for new hand and new turn player
-        var update = {};
-        update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
-        update["turnOrder/turnPlayer"] = nextTurnPlayer;
+    // Create update for new hand and new turn player
+    update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
+    update["turnOrder/turnPlayer"] = nextTurnPlayer;
 
-        // Check if there was a bet placed
-        if (isThereABet == true) {
-          if (betObject["type"] == "raise") {
-            update["betting/toCall"] = {
-              didAFullCircle: false,
-              uid: uid,
-              amount: betObject["amount"],
-            };
+    tableRef.update(update).then(() => {
+      // Cards in hand update success
+      //res.status(201).json({ message: "Success" });
+    });
 
-            // Add bet amount to the pot
-            update["betting/pot/pot1"] =
-              firebaseAdmin.database.ServerValue.increment(
-                parseInt(betObject["amount"])
-              );
-          }
-        }
-
-        // Update cards in hand
-        tableRef.update(update).then(() => {
-          // Cards in hand update success
-          res.status(201).json({ message: "Success" });
-        });
-      })
-      .catch((error) => {
-        console.log("Error setting post in newMovesPost: ", error);
-        res.status(500).json({ message: "Error setting new moves post." });
+    // Update the betting amount on Firestore
+    fs.collection("users")
+      .doc(uid)
+      .update({
+        // Subtract what was betted from players total
+        chips: firebaseAdmin.firestore.FieldValue.increment(
+          -parseInt(betObject["amount"])
+        ),
       });
   } catch (err) {
     console.log("Error in /playCards", err);
