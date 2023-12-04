@@ -1,7 +1,7 @@
 const express = require("express");
 const app = express();
 const bodyParser = require("body-parser"); // TODO: do I really need this?
-app.use(bodyParser.json()); 
+app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // TODO: need to remove this eventually
@@ -16,6 +16,7 @@ firebaseAdmin.initializeApp({
 });
 
 var db = firebaseAdmin.database();
+var fs = firebaseAdmin.firestore();
 
 var refTable = db.ref("tables/1");
 var refPlayers = db.ref("tables/1/players");
@@ -24,13 +25,11 @@ var deckRef = db.ref("tables/1/cards/dealer/deck");
 var deckCountRef = db.ref("tables/1/cards/dealer");
 var playerCardsRef = db.ref("tables/1/cards/playerCards");
 var cardsDiscardPileRef = db.ref("tables/1/cards/discardPile");
+var chipsRef = db.ref("tables/1/chips");
 var winnerRef = db.ref("tables/1/winner");
+var potRef = db.ref("tables/1/betting/pot/pot1");
 var firstTurnPlayerRef = db.ref("tables/1/turnOrder/firstTurnPlayer");
-var turnOrderRef = db.ref('tables/1/turnOrder');
-
-// This is because the reference is a list, limitToLast(1) reassures we only get the
-// latest one to be added.
-var movesRef = db.ref("tables/1/moves").limitToLast(1);
+var turnOrderRef = db.ref("tables/1/turnOrder");
 
 // Whenever a player joins the lobby
 refPlayers.on(
@@ -89,7 +88,12 @@ async function getTurnOrder() {
     });
 }
 
-function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousTurnOrderResult) {
+function startGame(
+  data,
+  numOfPlayers,
+  wasThereAFirstTurnPlayerBefore,
+  previousTurnOrderResult
+) {
   // Get starting hand
   var _startingHand = startingHand.setCards(numOfPlayers);
   var deck = _startingHand["deck"];
@@ -99,8 +103,8 @@ function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousT
 
   // Resetting folded variables of players to false
   var update = {};
-  for(i = 0; i < numOfPlayers; i++) {
-    update["players/"+ playerPositions[i] + "/folded"] = false;  
+  for (i = 0; i < numOfPlayers; i++) {
+    update["players/" + playerPositions[i] + "/folded"] = false;
   }
 
   var cardUpdates = {};
@@ -132,25 +136,26 @@ function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousT
     var previousFirstTurnPlayer = previousTurnOrderResult.firstTurnPlayer;
     //var previousPlayersList = previousTurnOrderResult.players;
 
-    var previousFirstTurnPlayerIndex = turnOrderUpdate.players.indexOf(previousFirstTurnPlayer);
+    var previousFirstTurnPlayerIndex = turnOrderUpdate.players.indexOf(
+      previousFirstTurnPlayer
+    );
 
-    if(previousFirstTurnPlayer == turnOrderUpdate.players[previousFirstTurnPlayerIndex]){
+    if (
+      previousFirstTurnPlayer ==
+      turnOrderUpdate.players[previousFirstTurnPlayerIndex]
+    ) {
       // Assing new index for next firstTurnPlayer
       var newIndex = previousFirstTurnPlayerIndex + 1;
       // Check if newIndex is at the end of the list
-      if (newIndex >= turnOrderUpdate.players.length){
+      if (newIndex >= turnOrderUpdate.players.length) {
         // If it is then assign to the first index of list
         newIndex = 0;
       }
 
       turnOrderUpdate["turnPlayer"] = playersPosition[newIndex];
       turnOrderUpdate["firstTurnPlayer"] = playersPosition[newIndex];
-
     }
-
-    
   } else {
-
     var randomPosition = getRandomNumber(playersPosition.length);
     turnOrderUpdate["turnPlayer"] = playersPosition[randomPosition];
     turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomPosition];
@@ -160,18 +165,19 @@ function startGame(data, numOfPlayers, wasThereAFirstTurnPlayerBefore, previousT
   var bettingUpdate = {
     pot: {
       pot1: 0,
-      potCount: 1
-    }
-  }
+      potCount: 1,
+    },
+  };
 
-  update['roundInProgress'] = true;
-  update['cards'] = cardUpdates;
-  update['turnOrder'] = turnOrderUpdate;
-  update['betting'] = bettingUpdate;
-  update['winner'] = 'none';
+  update["roundInProgress"] = true;
+  update["cards"] = cardUpdates;
+  update["turnOrder"] = turnOrderUpdate;
+  update["betting"] = bettingUpdate;
+  update["moves"] = [];
+  update["winner"] = "none";
 
   // This will be put somewhere else in the future
-  update['blinds'] = {small:2, big:4};
+  update["blinds"] = { small: 2, big: 4 };
 
   try {
     refTable
@@ -288,28 +294,33 @@ playerCardsRef.on("value", async (snapshot) => {
     });
 });
 
-// Listener for moves
-movesRef.on("value", async (snapshot) => {
-  snapshot.forEach((childSnapshot) => {
-    var childData = childSnapshot.val();
-
-    var newDiscardPile = cardsDiscardPileRef.push();
-
-    newDiscardPile
-      .set(childData["move"])
-      .then((value) => {})
-      .catch((err) => {
-        console.log("error newDiscardPile: " + err);
-      });
-  });
-});
-
 winnerRef.on("value", async (snapshot) => {
   var winner = snapshot.val();
-  if (winner !== "none") {
-    await delay(5000);
-    refTable.update({ winner: "none" });
+
+  if (winner != "none") {
+    potRef.get().then((snapshot) => {
+      var potAmount = snapshot.val();
+      var update = {};
+      update["chips/" + winner + "/chipCount"] =
+        firebaseAdmin.database.ServerValue.increment(potAmount);
+
+      update["betting/pot/pot1"] = 0;
+      refTable.update(update).then(() => {
+        fs.collection("users")
+          .doc(winner)
+          .update({
+            chips: firebaseAdmin.firestore.FieldValue.increment(potAmount),
+          })
+          .then(() => {
+          });
+      });
+    });
   }
+
+  // if (winner !== "none") {
+  //   await delay(5000);
+  //   refTable.update({ winner: "none" });
+  // }
 });
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -327,7 +338,7 @@ const signInRouter = require("./routes/sign_in");
 app.use("/sign_in", signInRouter);
 
 //Uncomment below for local testing
-app.listen(3000, () => console.log("Server Started"));
+//app.listen(3000, () => console.log("Server Started"));
 
 //Uncomment below for push
-//app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
