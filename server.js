@@ -46,18 +46,7 @@ refPlayers.on(
         // Check if round is in progress
         let result = await isRoundInProgress();
         if (!result) {
-          // Get the turn order information from previous round
-          let getTurnOrderResult = await getTurnOrder();
-
-          // Check if there was a turnOrder
-          if (getTurnOrderResult != undefined) {
-            // There was a previous round, pass the firstTurnPlayer
-            startGame(data, numOfPlayers, true, getTurnOrderResult);
-          } else {
-            // This table is brand new, there was no one here before so
-            // start a new game
-            startGame(data, numOfPlayers, false, null);
-          }
+          startGame(data, numOfPlayers);
         } else {
           // round is in progress, do nothing
         }
@@ -88,12 +77,7 @@ async function getTurnOrder() {
     });
 }
 
-function startGame(
-  data,
-  numOfPlayers,
-  wasThereAFirstTurnPlayerBefore,
-  previousTurnOrderResult
-) {
+async function startGame(data, numOfPlayers) {
   // Get starting hand
   var _startingHand = startingHand.setCards(numOfPlayers);
   var deck = _startingHand["deck"];
@@ -131,6 +115,19 @@ function startGame(
   });
   // Add players list to update
   turnOrderUpdate["players"] = playersPosition;
+
+  let getTurnOrderResult = await getTurnOrder();
+  var wasThereAFirstTurnPlayerBefore;
+  var previousTurnOrderResult;
+
+  // Getting the turn order results from the previous round.
+  // Making sure first turn player changes
+  if (getTurnOrderResult != undefined) {
+    wasThereAFirstTurnPlayerBefore = true;
+    previousTurnOrderResult = getTurnOrderResult;
+  } else {
+    wasThereAFirstTurnPlayerBefore = false;
+  }
 
   if (wasThereAFirstTurnPlayerBefore) {
     var previousFirstTurnPlayer = previousTurnOrderResult.firstTurnPlayer;
@@ -294,6 +291,8 @@ playerCardsRef.on("value", async (snapshot) => {
     });
 });
 
+// TODO: need to optimize this for when there is no bet, there wont be a need to do certain calls
+// if that is the case
 winnerRef.on("value", async (snapshot) => {
   var winner = snapshot.val();
 
@@ -311,16 +310,23 @@ winnerRef.on("value", async (snapshot) => {
           .update({
             chips: firebaseAdmin.firestore.FieldValue.increment(potAmount),
           })
-          .then(() => {
+          .then(async () => {
+            await delay(5000);
+            // Restart the game
+            refPlayers.get().then(async (snapshot) => {
+              var data = snapshot.toJSON();
+              const numOfPlayers = Object.keys(data).length;
+
+              if (numOfPlayers > 1) {
+                startGame(data, numOfPlayers);
+              } else {
+                refTable.update({ roundInProgress: false });
+              }
+            });
           });
       });
     });
   }
-
-  // if (winner !== "none") {
-  //   await delay(5000);
-  //   refTable.update({ winner: "none" });
-  // }
 });
 const delay = (ms) => new Promise((res) => setTimeout(res, ms));
 
@@ -338,7 +344,7 @@ const signInRouter = require("./routes/sign_in");
 app.use("/sign_in", signInRouter);
 
 //Uncomment below for local testing
-//app.listen(3000, () => console.log("Server Started"));
+app.listen(3000, () => console.log("Server Started"));
 
 //Uncomment below for push
-app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+//app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
