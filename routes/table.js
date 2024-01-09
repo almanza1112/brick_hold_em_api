@@ -90,7 +90,7 @@ router.post("/join", async (req, res) => {
             if (data[keys[i]]["uid"] === req.body.uid) {
               return res
                 .status(201)
-                .json({ message: "Player is already in game." });
+                .json({ message: "Player is already in game.", position: i+1});
             }
           }
 
