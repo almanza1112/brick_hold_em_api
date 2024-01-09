@@ -94,6 +94,7 @@ async function startGame(data, numOfPlayers) {
   var cardUpdates = {};
   var playerCards = {};
   var turnOrderUpdate = {};
+  var blindUpdate = {};
 
   // Set the starting hand to players
   for (i = 0; i < numOfPlayers; i++) {
@@ -114,7 +115,7 @@ async function startGame(data, numOfPlayers) {
     return parseInt(str);
   });
   // Add players list to update
-  turnOrderUpdate["players"] = playersPosition;
+  turnOrderUpdate["players"] = playersPosition.reverse();
 
   let getTurnOrderResult = await getTurnOrder();
   var wasThereAFirstTurnPlayerBefore;
@@ -141,7 +142,7 @@ async function startGame(data, numOfPlayers) {
       previousFirstTurnPlayer ==
       turnOrderUpdate.players[previousFirstTurnPlayerIndex]
     ) {
-      // Assing new index for next firstTurnPlayer
+      // Acessing new index for next firstTurnPlayer
       var newIndex = previousFirstTurnPlayerIndex + 1;
       // Check if newIndex is at the end of the list
       if (newIndex >= turnOrderUpdate.players.length) {
@@ -156,6 +157,29 @@ async function startGame(data, numOfPlayers) {
     var randomPosition = getRandomNumber(playersPosition.length);
     turnOrderUpdate["turnPlayer"] = playersPosition[randomPosition];
     turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomPosition];
+  }
+
+  // Setting blinds order
+  var bigBlindPlayer;
+  var smallBlindPlayer;
+  var firstTurnPlayerIndex = turnOrderUpdate.players.indexOf(turnOrderUpdate.firstTurnPlayer);
+  var bigBlindIndex = firstTurnPlayerIndex - 1;
+  if(bigBlindIndex < 0){
+    bigBlindPlayer = turnOrderUpdate.players[turnOrderUpdate.players.length - 1];
+  } else {
+    bigBlindPlayer = turnOrderUpdate.players[bigBlindIndex];
+  }
+
+  var smallBlindIndex = turnOrderUpdate.players.indexOf(bigBlindPlayer) - 1;
+  if(smallBlindIndex < 0){
+    smallBlindPlayer = turnOrderUpdate.players[turnOrderUpdate.players.length - 1];
+  } else {
+    smallBlindPlayer = turnOrderUpdate.players[smallBlindIndex];
+  }
+
+  var blindUpdate = {
+    bigBlind: bigBlindPlayer,
+    smallBlind: smallBlindPlayer,
   }
 
   // Restarting betting data
@@ -174,7 +198,7 @@ async function startGame(data, numOfPlayers) {
   update["winner"] = "none";
 
   // This will be put somewhere else in the future
-  update["blinds"] = { small: 2, big: 4 };
+  update["blinds"] = blindUpdate;
 
   try {
     refTable
@@ -344,7 +368,7 @@ const signInRouter = require("./routes/sign_in");
 app.use("/sign_in", signInRouter);
 
 //Uncomment below for local testing
-app.listen(3000, () => console.log("Server Started"));
+//app.listen(3000, () => console.log("Server Started"));
 
 //Uncomment below for push
-//app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
