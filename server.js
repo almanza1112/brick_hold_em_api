@@ -3,6 +3,7 @@ const app = express();
 const bodyParser = require("body-parser"); // TODO: do I really need this?
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+const cron = require("node-cron");
 
 // TODO: need to remove this eventually
 const startingHand = require("./table/table_starting_hand");
@@ -372,3 +373,12 @@ app.use("/sign_in", signInRouter);
 
 //Uncomment below for push
 app.listen(process.env.PORT || 5000 , () => console.log('Server Started'))
+
+// Schedule a self-ping every 10 minutes
+// Uncomment for production push. Comment for local testing
+cron.schedule('*/10 * * * *', () => {
+  console.log("Pinging self...");
+  https.get("https://the-sales-gong-api.onrender.com", (res) => {
+    console.log(`Ping response: ${res.statusCode}`);
+  });
+});
