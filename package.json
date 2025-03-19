@@ -8,6 +8,9 @@
   },
   "author": "Bryant Almanza",
   "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
     "dotenv": "^16.0.3",
     "nodemon": "^3.1.7"
