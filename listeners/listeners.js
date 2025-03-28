@@ -39,98 +39,80 @@ module.exports = function (dependencies) {
     return Math.floor(Math.random() * max);
   }
 
-  async function startGame(data, numOfPlayers) {
-    // Get starting hand
-    const _startingHand = startingHand.setCards(numOfPlayers);
-    const deck = _startingHand["deck"];
-    const playerInfo = Object.values(data);
-    const playerPositions = Object.keys(data);
+  // async function startGame(data, numOfPlayers) {
+  //   // Get starting hand
+  //   const _startingHand = startingHand.setCards(numOfPlayers);
+  //   const deck = _startingHand["deck"];
+  //   const playerInfo = Object.values(data);
+  //   const playerPositions = Object.keys(data);
 
-    // Reset folded status for each player
-    let update = {};
-    playerPositions.forEach((pos) => {
-      update[`players/${pos}/folded`] = false;
-    });
+  //   // Reset folded status for each player
+  //   let update = {};
+  //   playerPositions.forEach((pos) => {
+  //     update[`players/${pos}/folded`] = false;
+  //   });
 
-    // Set up player cards and turn order
-    let cardUpdates = {};
-    let playerCards = {};
-    let turnOrderUpdate = {};
+  //   // Set up player cards and turn order
+  //   let cardUpdates = {};
+  //   let playerCards = {};
+  //   let turnOrderUpdate = {};
 
-    playerInfo.forEach((player, i) => {
-      playerCards[player.uid] = {
-        hand: _startingHand["playersCards"][i],
-        position: player.position,
-      };
-    });
+  //   playerInfo.forEach((player, i) => {
+  //     playerCards[player.uid] = {
+  //       hand: _startingHand["playersCards"][i],
+  //       position: player.position,
+  //     };
+  //   });
 
-    cardUpdates["dealer"] = { deck: deck, deckCount: deck.length };
-    cardUpdates["playerCards"] = playerCards;
-    const firstCardOnDiscard = _startingHand["faceUpCard"][0];
+  //   cardUpdates["dealer"] = { deck: deck, deckCount: deck.length };
+  //   cardUpdates["playerCards"] = playerCards;
+  //   const firstCardOnDiscard = _startingHand["faceUpCard"][0];
 
-    // Setting turn order of players
-    const playersPosition = playerPositions.map(Number).reverse();
-    turnOrderUpdate["players"] = playersPosition;
+  //   // Setting turn order of players
+  //   const playersPosition = playerPositions.map(Number).reverse();
+  //   turnOrderUpdate["players"] = playersPosition;
 
-    let getTurnOrderResult = await getTurnOrder();
+  //   let getTurnOrderResult = await getTurnOrder();
 
-    if (getTurnOrderResult) {
-      // Rotate the firstTurnPlayer for fairness
-      const previousFirstTurnPlayer = getTurnOrderResult.firstTurnPlayer;
-      const currentIndex = playersPosition.indexOf(previousFirstTurnPlayer);
-      const newIndex = (currentIndex + 1) % playersPosition.length;
-      turnOrderUpdate["turnPlayer"] = playersPosition[newIndex];
-      turnOrderUpdate["firstTurnPlayer"] = playersPosition[newIndex];
-    } else {
-      const randomIndex = getRandomNumber(playersPosition.length);
-      turnOrderUpdate["turnPlayer"] = playersPosition[randomIndex];
-      turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomIndex];
-    }
+  //   if (getTurnOrderResult) {
+  //     // Rotate the firstTurnPlayer for fairness
+  //     const previousFirstTurnPlayer = getTurnOrderResult.firstTurnPlayer;
+  //     const currentIndex = playersPosition.indexOf(previousFirstTurnPlayer);
+  //     const newIndex = (currentIndex + 1) % playersPosition.length;
+  //     turnOrderUpdate["turnPlayer"] = playersPosition[newIndex];
+  //     turnOrderUpdate["firstTurnPlayer"] = playersPosition[newIndex];
+  //   } else {
+  //     const randomIndex = getRandomNumber(playersPosition.length);
+  //     turnOrderUpdate["turnPlayer"] = playersPosition[randomIndex];
+  //     turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomIndex];
+  //   }
 
-    // Set blinds order
-    let firstTurnPlayerIndex = playersPosition.indexOf(
-      turnOrderUpdate.firstTurnPlayer
-    );
-    let bigBlindIndex =
-      firstTurnPlayerIndex - 1 < 0
-        ? playersPosition.length - 1
-        : firstTurnPlayerIndex - 1;
-    let smallBlindIndex =
-      bigBlindIndex - 1 < 0 ? playersPosition.length - 1 : bigBlindIndex - 1;
+  //   // Restart betting data
+  //   const bettingUpdate = {
+  //     pot: { pot1: 0, potCount: 1 },
+  //   };
 
-    const blindUpdate = {
-      bigBlind: playersPosition[bigBlindIndex],
-      smallBlind: playersPosition[smallBlindIndex],
-    };
+  //   update["roundInProgress"] = true;
+  //   update["nextGameStarts"] = nextGameStarts;
+  //   update["cards"] = cardUpdates;
+  //   update["turnOrder"] = turnOrderUpdate;
+  //   update["betting"] = bettingUpdate;
+  //   update["moves"] = [];
+  //   update["winner"] = "none";
 
-    // Restart betting data
-    const bettingUpdate = {
-      pot: { pot1: 0, potCount: 1 },
-    };
-
-    update["roundInProgress"] = true;
-    update["cards"] = cardUpdates;
-    update["turnOrder"] = turnOrderUpdate;
-    update["betting"] = bettingUpdate;
-    update["moves"] = [];
-    update["winner"] = "none";
-    update["blinds"] = blindUpdate;
-
-    try {
-      refTable.update(update).then(() => {
-        cardsDiscardPileRef
-          .push()
-          .set({ 0: firstCardOnDiscard })
-          .catch((err) => {
-            console.log("error newDiscardPile: " + err);
-          });
-      });
-    } catch (err) {
-      console.log("Error in startGame: ", err);
-    }
-  }
-
-  const delay = (ms) => new Promise((res) => setTimeout(res, ms));
+  //   try {
+  //     refTable.update(update).then(() => {
+  //       cardsDiscardPileRef
+  //         .push()
+  //         .set({ 0: firstCardOnDiscard })
+  //         .catch((err) => {
+  //           console.log("error newDiscardPile: " + err);
+  //         });
+  //     });
+  //   } catch (err) {
+  //     console.log("Error in startGame: ", err);
+  //   }
+  // }
 
   // ----- Attach Event Listeners -----
 
@@ -238,17 +220,10 @@ module.exports = function (dependencies) {
               chips: firebaseAdmin.firestore.FieldValue.increment(potAmount),
             })
             .then(async () => {
-              await delay(5000);
-              // Restart the game
-              refPlayers.get().then((snapshot) => {
-                const data = snapshot.toJSON();
-                const numOfPlayers = data ? Object.keys(data).length : 0;
-                if (numOfPlayers > 1) {
-                  startGame(data, numOfPlayers);
-                } else {
-                  refTable.update({ roundInProgress: false });
-                }
-              });
+              // Instead of waiting 5 seconds and starting game immediately,
+              // update nextGameStarts to 5 seconds from now.
+              const nextGameStarts = Date.now() + 5000;
+              await refTable.update({ nextGameStarts: nextGameStarts });
             });
         });
       });

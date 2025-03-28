@@ -1,4 +1,10 @@
+/**
+ * This class is for the cards for the game.
+ */
 class Cards {
+  /**
+     * Constructor containing all the cards
+     */
   constructor() {
     this.cards = [
       "clubs2",
@@ -58,6 +64,9 @@ class Cards {
     ];
   }
 
+  /**
+   * @return {cards}
+   */
   getCards() {
     return this.cards;
   }

@@ -311,43 +311,7 @@ router.post("/playCards", async (req, res) => {
     var cardsToDiscard = req.body.cardsToDiscard;
     var cardsInHand = req.body.cardsInHand;
     var position = req.body.position;
-    var isThereABet = JSON.parse(req.body.isThereABet);
-    var betObject;
     var update = {};
-
-    // Check if there was a bet placed
-    if (isThereABet == true) {
-      betObject = JSON.parse(req.body.bet);
-      var betType = betObject['type'];
-      var betAmount = parseInt(betObject["amount"]);
-
-      if (betObject["type"] == "raise") {
-        update["betting/toCall"] = {
-          didAFullCircle: false,
-          uid: uid,
-          amount: betObject["amount"],
-          position: position,
-        };
-
-        // Add bet amount to the pot
-        update["betting/pot/pot1"] =
-          firebaseAdmin.database.ServerValue.increment(betAmount);
-
-        // Update player chip count
-        update["chips/" + uid + "/chipCount"] =
-          firebaseAdmin.database.ServerValue.increment(-betAmount);
-      } 
-
-      if (betType == "call") {
-        // Add bet amount to the pot
-        update["betting/pot/pot1"] =
-          firebaseAdmin.database.ServerValue.increment(betAmount);
-
-        // Update player chip count
-        update["chips/" + uid + "/chipCount"] =
-          firebaseAdmin.database.ServerValue.increment(-betAmount);
-      }
-    }
 
     // Removes the brackets surronding the move string array
     var trimmedMoveString = move.slice(1, -1);
@@ -398,24 +362,25 @@ router.post("/playCards", async (req, res) => {
 
     tableRef.update(update).then(() => {
       // Cards in hand update success
+      res.status(201).json({ message: "Success" });
 
       // Check if there was a bet
-      if (isThereABet === true) {
-        // Update the betting amount on Firestore
-        fs.collection("users")
-          .doc(uid)
-          .update({
-            // Subtract what was betted from players total
-            chips: firebaseAdmin.firestore.FieldValue.increment(
-              -parseInt(betObject["amount"])
-            ),
-          })
-          .then(() => {
-            res.status(201).json({ message: "Success" });
-          });
-      } else {
-        res.status(201).json({ message: "Success" });
-      }
+      // if (isThereABet === true) {
+      //   // Update the betting amount on Firestore
+      //   fs.collection("users")
+      //     .doc(uid)
+      //     .update({
+      //       // Subtract what was betted from players total
+      //       chips: firebaseAdmin.firestore.FieldValue.increment(
+      //         -parseInt(betObject["amount"])
+      //       ),
+      //     })
+      //     .then(() => {
+      //       res.status(201).json({ message: "Success" });
+      //     });
+      // } else {
+      //   res.status(201).json({ message: "Success" });
+      // }
     });
   } catch (err) {
     console.log("Error in /playCards", err);
