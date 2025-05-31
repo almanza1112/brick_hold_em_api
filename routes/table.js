@@ -17,6 +17,7 @@ var discardPileRef = db.ref("tables/1/cards/discardPile");
 var foldedHandsRef = db.ref("tables/1/cards/foldedHands");
 var chipsRef = db.ref("tables/1/chips");
 var movesRef = db.ref("tables/1/moves");
+var bettingRef = db.ref("tables/1/betting");
 var isRoundInProgressRef = db.ref("tables/1/roundInProgress");
 
 const messageServerError = "Invalid server error.";
@@ -90,7 +91,10 @@ router.post("/join", async (req, res) => {
             if (data[keys[i]]["uid"] === req.body.uid) {
               return res
                 .status(201)
-                .json({ message: "Player is already in game.", position: i+1});
+                .json({
+                  message: "Player is already in game.",
+                  position: i + 1,
+                });
             }
           }
 
@@ -287,15 +291,17 @@ router.post("/foldhand", async (req, res) => {
         // Remove element from index
         turnOrderArray.splice(positionOfPlayerInArray, 1);
 
-        playersRef.child(turnOrderArray[0]).get().then((snapshot) => {
-          var playerData = snapshot.val();
-          var winnerUid = playerData['uid'];
-          var winningUpdate={};
-          winningUpdate['winner'] = winnerUid;
+        playersRef
+          .child(turnOrderArray[0])
+          .get()
+          .then((snapshot) => {
+            var playerData = snapshot.val();
+            var winnerUid = playerData["uid"];
+            var winningUpdate = {};
+            winningUpdate["winner"] = winnerUid;
 
-          tableRef.update(winningUpdate).then(() => {});
-        });
-
+            tableRef.update(winningUpdate).then(() => {});
+          });
       }
     });
   } catch (err) {
@@ -310,6 +316,7 @@ router.post("/playCards", async (req, res) => {
     var move = req.body.move;
     var cardsToDiscard = req.body.cardsToDiscard;
     var cardsInHand = req.body.cardsInHand;
+    var anteMultiplier = req.body.anteMultiplier;
     var position = req.body.position;
     var update = {};
 
@@ -333,6 +340,8 @@ router.post("/playCards", async (req, res) => {
 
     var nextTurnPlayer;
 
+    var amountToCall = 0;
+
     // Check if next player index is at the end of array
     if (nextTurnIndex < playersList.length) {
       // Next player index is NOT at the end of array
@@ -352,6 +361,15 @@ router.post("/playCards", async (req, res) => {
       move: moveArray,
     };
 
+    // Check if there is an amount to call for next player
+    if (anteMultiplier > 0) {
+      // Get the betting information
+      var bettingSnapshot = await bettingRef.once("value");
+      var bettingData = bettingSnapshot.val();
+      var ante = bettingData["ante"];
+      amountToCall = ante * parseInt(anteMultiplier);
+    }
+
     // Add move and discard pile update
     update["moves/" + newMovesPost.key] = moveUpdate;
     update["cards/discardPile/" + newDiscardPilePost.key] = cardsToDiscardArray;
@@ -359,6 +377,10 @@ router.post("/playCards", async (req, res) => {
     // Create update for new hand and new turn player
     update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
     update["turnOrder/turnPlayer"] = nextTurnPlayer;
+
+    // Update the player to call and the amount of chips need to call
+    update["betting/playerToCall"] = nextTurnPlayer;
+    update["betting/amountToCall"] = amountToCall;
 
     tableRef.update(update).then(() => {
       // Cards in hand update success
