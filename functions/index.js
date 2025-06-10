@@ -25,103 +25,125 @@ async function getTurnOrder() {
  * When the current time is past the scheduled timestamp, this function
  * resets the game.
  */
-exports.startGame = onValueUpdated("/tables/1/nextGameStarts",
+exports.startGame = onValueUpdated(
+    "/tables/1/nextGameStarts",
     async (event) => {
-      // Get the new nextGameStarts value.
       const nextGameStarts = event.data.after.val();
       if (!nextGameStarts) {
-        console.log("nextGameStarts not set.");
-        return;
+        console.log("nextGameStarts not set—aborting.");
+        return null;
       }
 
+      // wait until the scheduled moment
       let now = Date.now();
       if (now < nextGameStarts) {
-        const delayMs = nextGameStarts - now;
-        console.log(`Waiting ${delayMs} ms until next game start...`);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        now = Date.now(); // update now after delay
+        await new Promise((res) => setTimeout(res, nextGameStarts - now));
+        now = Date.now();
       }
 
-      // Proceed with starting a new game.
       try {
-        const refTable = db.ref("tables/1");
-        const refPlayers = db.ref("tables/1/players");
-        const cardsDiscardPileRef = db.ref("tables/1/cards/discardPile");
+        const tableRef = db.ref("tables/1");
+        const playersRef = tableRef.child("players");
+        const discardPileRef = tableRef.child("cards/discardPile");
 
-        // Get players data.
-        const playersSnapshot = await refPlayers.get();
-        const playersData = playersSnapshot.val();
+        // 1) grab the list of players
+        const playersSnap = await playersRef.get();
+        const playersData = playersSnap.val();
         if (!playersData) {
-          console.log("No players found. Aborting new game.");
-          return;
+          console.log("No players found—cannot start game.");
+          return null;
         }
-        const numOfPlayers = Object.keys(playersData).length;
+        const numPlayers = Object.keys(playersData).length;
 
-        // Generate starting hand using your module.
-        const startingHandData = startingHand.setCards(numOfPlayers);
-        const deck = startingHandData["deck"]; // Array of cards.
-        const playersCardsArray = startingHandData["playersCards"];
-        const firstCardOnDiscard = startingHandData["faceUpCard"][0];
+        // 2) generate shuffled deck + hands
+        const {deck, playersCards, faceUpCard} =
+          startingHand.setCards(numPlayers);
+        const topFaceUp = faceUpCard[0];
 
-        // Build playerCards update.
-        const playerCardsUpdate = {};
-        const playerInfo = Object.values(playersData);
-        playerInfo.forEach((player, index) => {
-          playerCardsUpdate[player.uid] = {
-            hand: playersCardsArray[index],
-            position: player.position,
-          };
+        // 3) build a map of new deck children: { pushKey: cardName }
+        const deckListRef = tableRef.child("cards/dealer/deck");
+        const deckMap = {};
+        deck.forEach((cardName) => {
+          const key = deckListRef.push().key;
+          deckMap[key] = cardName;
         });
-        const cardUpdates = {
-          dealer: {deck: deck, deckCount: deck.length},
-          playerCards: playerCardsUpdate,
+
+        // 4) start your multi-location payload by initializing it
+        const updatePayload = {
+          // replace the deck
+          "cards/dealer/deck": deckMap,
+          "cards/dealer/deckCount": deck.length,
+
+          // clear discard pile
+          "cards/discardPile": {},
+
+          // game flags you already know
+          "roundInProgress": true,
+          "nextGameStarts": 0,
         };
 
-        // Turn order logic.
-        const playerIds = Object.keys(playersData);
-        let playersPosition = playerIds.map((uid) => Number(playersData[uid]
-            .position));
-        playersPosition = playersPosition.reverse();
-        const turnOrderUpdate = {};
-        turnOrderUpdate["players"] = playersPosition;
 
-        const currentTurnOrder = await getTurnOrder();
-        if (currentTurnOrder) {
-          const previousFirstTurnPlayer = currentTurnOrder.firstTurnPlayer;
-          const currentIndex = playersPosition.indexOf(previousFirstTurnPlayer);
-          const newIndex = (currentIndex + 1) % playersPosition.length;
-          turnOrderUpdate["turnPlayer"] = playersPosition[newIndex];
-          turnOrderUpdate["firstTurnPlayer"] = playersPosition[newIndex];
+        // 5) build each player’s new hand as a map too
+        Object.values(playersData).forEach((playerObj, idx) => {
+          console.log("Processing player:", playerObj);
+          console.log("idx:", idx);
+          const uid = playerObj.uid;
+          const cardsForMe = playersCards[idx];
+          const handMap = {};
+          const handRef = tableRef
+              .child(`cards/playerCards/${uid}/hand`);
+          cardsForMe.forEach((cardName) => {
+            const childKey = handRef.push().key;
+            handMap[childKey] = cardName;
+          });
+
+          // inject under the correct UID path:
+          updatePayload[`cards/playerCards/${uid}`] = {
+            hand: handMap,
+            position: playerObj.position,
+          };
+        });
+
+
+        // 6) compute new turnOrder
+        const positions = Object.values(playersData)
+            .map((p) => Number(p.position))
+            .reverse();
+        const turnOrderObj = {};
+        const existingOrder = await getTurnOrder();
+        if (existingOrder) {
+          const prev = existingOrder.firstTurnPlayer;
+          const curIndex = positions.indexOf(prev);
+          const nextIndex = (curIndex + 1) % positions.length;
+          turnOrderObj.firstTurnPlayer = positions[nextIndex];
+          turnOrderObj.turnPlayer = positions[nextIndex];
         } else {
-          const randomIndex = Math.floor(Math.random()*playersPosition.length);
-          turnOrderUpdate["turnPlayer"] = playersPosition[randomIndex];
-          turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomIndex];
+          const rand = Math.floor(Math.random() * positions.length);
+          turnOrderObj.firstTurnPlayer = positions[rand];
+          turnOrderObj.turnPlayer = positions[rand];
         }
-        // e.g. 30 seconds from now
-        turnOrderUpdate["turnExpiration"] = now + 30000;
+        turnOrderObj.players = positions;
+        turnOrderObj.turnExpiration = now + 30000;
 
-        // Reset betting.
-        const bettingUpdate = {pot: {pot1: 0, potCount: 1}};
+        // 7) reset betting & moves
+        const pot = {pot1: 0, potCount: 1};
 
-        // Build the overall update object.
-        const update = {};
-        update["roundInProgress"] = true;
-        // Clear nextGameStarts to indicate game has started.
-        update["nextGameStarts"] = 0;
-        update["cards"] = cardUpdates;
-        update["turnOrder"] = turnOrderUpdate;
-        update["betting"] = bettingUpdate;
-        update["moves"] = [];
-        update["winner"] = "none";
+        // 8) add to the big multi-location update under /tables/1
+        updatePayload["turnOrder"] = turnOrderObj;
+        updatePayload["pot"] = pot;
+        updatePayload["moves"] = [];
+        updatePayload["winner"] = "none";
 
-        // Update the table.
-        await refTable.update(update);
-        // Push the initial face-up card into the discard pile.
-        await cardsDiscardPileRef.push().set({0: firstCardOnDiscard});
+        // 10) commit atomically
+        await tableRef.update(updatePayload);
 
-        console.log("New game started automatically at", now);
+        // 11) push the one face-up card
+        await discardPileRef.push().set(topFaceUp);
+
+        console.log("New game started at", now);
       } catch (err) {
         console.error("Error starting game automatically:", err);
       }
       return null;
-    });
+    },
+);

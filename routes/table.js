@@ -4,12 +4,11 @@ const router = express();
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
 
-const cards = require("../table/table_starting_hand");
 
 var firebaseAdmin = require("firebase-admin");
 var db = firebaseAdmin.database();
 var fs = firebaseAdmin.firestore();
-var turnRef = db.ref("tables/1/turnOrder");
+const turnRef = db.ref("tables/1/turnOrder");
 var playersRef = db.ref("tables/1/players");
 var tableRef = db.ref("tables/1/");
 var playerHandRef = db.ref("tables/1/cards/playerCards/");
@@ -17,7 +16,7 @@ var discardPileRef = db.ref("tables/1/cards/discardPile");
 var foldedHandsRef = db.ref("tables/1/cards/foldedHands");
 var chipsRef = db.ref("tables/1/chips");
 var movesRef = db.ref("tables/1/moves");
-var bettingRef = db.ref("tables/1/betting");
+var anteToCallRef = db.ref("tables/1/anteToCall");
 var isRoundInProgressRef = db.ref("tables/1/roundInProgress");
 
 const messageServerError = "Invalid server error.";
@@ -89,12 +88,10 @@ router.post("/join", async (req, res) => {
           // is than litreally do nothing
           for (var i = 0; i < keys.length; i++) {
             if (data[keys[i]]["uid"] === req.body.uid) {
-              return res
-                .status(201)
-                .json({
-                  message: "Player is already in game.",
-                  position: i + 1,
-                });
+              return res.status(201).json({
+                message: "Player is already in game.",
+                position: i + 1,
+              });
             }
           }
 
@@ -331,16 +328,20 @@ router.post("/playCards", async (req, res) => {
     var cardsInHandArray = trimmedCardsInHandString.split(", ");
 
     // Get the turn order information
-    var snapshot = await turnRef.once("value");
-    var data = snapshot.val();
-    var playersList = data["players"];
-    var turnPlayer = data["turnPlayer"];
+    const turnSnapshot = await turnRef.once("value");
+    const turnData = turnSnapshot.val();
+    var playersList = turnData["players"];
+    var turnPlayer = turnData["turnPlayer"];
     var currentIndex = playersList.indexOf(turnPlayer);
     var nextTurnIndex = currentIndex + 1;
 
-    var nextTurnPlayer;
+    let nextTurnPlayer;
 
-    var amountToCall = 0;
+    let amountToCall = 0;
+    const cardsToDraw = req.body.cardsToDraw;
+    const combo = req.body.combo;
+    const action = req.body.action;
+    const usernameOfActionPlayer = req.body.username; // TODO: this will be used in the future to display the player that made the move
 
     // Check if next player index is at the end of array
     if (nextTurnIndex < playersList.length) {
@@ -350,6 +351,14 @@ router.post("/playCards", async (req, res) => {
       // Next player index is at the end of array, start from beginning
       nextTurnPlayer = playersList[0];
     }
+
+    // Get the username of the next turn player
+    const nextTurnPlayerString =
+      "tables/1/players/" + nextTurnPlayer + "/username";
+    const nextTurnPlayerRef = db.ref(nextTurnPlayerString);
+    const nextTurnPlayerSnapshot = await nextTurnPlayerRef.once("value");
+    const nextTurnPlayerData = nextTurnPlayerSnapshot.val();
+    console.log(nextTurnPlayerData);
 
     // Create new post to push into Moves and Discard Pile list
     var newMovesPost = movesRef.push();
@@ -364,9 +373,9 @@ router.post("/playCards", async (req, res) => {
     // Check if there is an amount to call for next player
     if (anteMultiplier > 0) {
       // Get the betting information
-      var bettingSnapshot = await bettingRef.once("value");
-      var bettingData = bettingSnapshot.val();
-      var ante = bettingData["ante"];
+      const anteToCallSnapshot = await anteToCallRef.once("value");
+      const anteToCallData = anteToCallSnapshot.val();
+      const ante = anteToCallData["ante"];
       amountToCall = ante * parseInt(anteMultiplier);
     }
 
@@ -379,8 +388,14 @@ router.post("/playCards", async (req, res) => {
     update["turnOrder/turnPlayer"] = nextTurnPlayer;
 
     // Update the player to call and the amount of chips need to call
-    update["betting/playerToCall"] = nextTurnPlayer;
-    update["betting/amountToCall"] = amountToCall;
+    update["anteToCall/playerToCallPosition"] = nextTurnPlayer;
+    update["anteToCall/amountToCall"] = amountToCall;
+    update["anteToCall/cardsToDraw"] = parseInt(cardsToDraw);
+    update["anteToCall/combo"] = combo;
+    update["anteToCall/action"] = action;
+    //update["anteToCall/usernameOfActionPlayer"] = usernameOfActionPlayer;
+    update["anteToCall/nextTurnPlayerUsername"] = nextTurnPlayerData;
+    update["anteToCall/didPlayerCall"] = false;
 
     tableRef.update(update).then(() => {
       // Cards in hand update success

@@ -1,5 +1,3 @@
-const startingHand = require("../table/table_starting_hand");
-
 module.exports = function (dependencies) {
   const {
     db,
@@ -17,7 +15,7 @@ module.exports = function (dependencies) {
   const cardsDiscardPileRef = db.ref("tables/1/cards/discardPile");
   const chipsRef = db.ref("tables/1/chips");
   const winnerRef = db.ref("tables/1/winner");
-  const potRef = db.ref("tables/1/betting/pot/pot1");
+  const potRef = db.ref("tables/1/pot/pot1");
   const turnOrderRef = db.ref("tables/1/turnOrder");
   const turnPlayerRef = db.ref("tables/1/turnOrder/turnPlayer");
 
@@ -38,81 +36,6 @@ module.exports = function (dependencies) {
   function getRandomNumber(max) {
     return Math.floor(Math.random() * max);
   }
-
-  // async function startGame(data, numOfPlayers) {
-  //   // Get starting hand
-  //   const _startingHand = startingHand.setCards(numOfPlayers);
-  //   const deck = _startingHand["deck"];
-  //   const playerInfo = Object.values(data);
-  //   const playerPositions = Object.keys(data);
-
-  //   // Reset folded status for each player
-  //   let update = {};
-  //   playerPositions.forEach((pos) => {
-  //     update[`players/${pos}/folded`] = false;
-  //   });
-
-  //   // Set up player cards and turn order
-  //   let cardUpdates = {};
-  //   let playerCards = {};
-  //   let turnOrderUpdate = {};
-
-  //   playerInfo.forEach((player, i) => {
-  //     playerCards[player.uid] = {
-  //       hand: _startingHand["playersCards"][i],
-  //       position: player.position,
-  //     };
-  //   });
-
-  //   cardUpdates["dealer"] = { deck: deck, deckCount: deck.length };
-  //   cardUpdates["playerCards"] = playerCards;
-  //   const firstCardOnDiscard = _startingHand["faceUpCard"][0];
-
-  //   // Setting turn order of players
-  //   const playersPosition = playerPositions.map(Number).reverse();
-  //   turnOrderUpdate["players"] = playersPosition;
-
-  //   let getTurnOrderResult = await getTurnOrder();
-
-  //   if (getTurnOrderResult) {
-  //     // Rotate the firstTurnPlayer for fairness
-  //     const previousFirstTurnPlayer = getTurnOrderResult.firstTurnPlayer;
-  //     const currentIndex = playersPosition.indexOf(previousFirstTurnPlayer);
-  //     const newIndex = (currentIndex + 1) % playersPosition.length;
-  //     turnOrderUpdate["turnPlayer"] = playersPosition[newIndex];
-  //     turnOrderUpdate["firstTurnPlayer"] = playersPosition[newIndex];
-  //   } else {
-  //     const randomIndex = getRandomNumber(playersPosition.length);
-  //     turnOrderUpdate["turnPlayer"] = playersPosition[randomIndex];
-  //     turnOrderUpdate["firstTurnPlayer"] = playersPosition[randomIndex];
-  //   }
-
-  //   // Restart betting data
-  //   const bettingUpdate = {
-  //     pot: { pot1: 0, potCount: 1 },
-  //   };
-
-  //   update["roundInProgress"] = true;
-  //   update["nextGameStarts"] = nextGameStarts;
-  //   update["cards"] = cardUpdates;
-  //   update["turnOrder"] = turnOrderUpdate;
-  //   update["betting"] = bettingUpdate;
-  //   update["moves"] = [];
-  //   update["winner"] = "none";
-
-  //   try {
-  //     refTable.update(update).then(() => {
-  //       cardsDiscardPileRef
-  //         .push()
-  //         .set({ 0: firstCardOnDiscard })
-  //         .catch((err) => {
-  //           console.log("error newDiscardPile: " + err);
-  //         });
-  //     });
-  //   } catch (err) {
-  //     console.log("Error in startGame: ", err);
-  //   }
-  // }
 
   // ----- Attach Event Listeners -----
 
@@ -183,24 +106,29 @@ module.exports = function (dependencies) {
 
   // Listener for updating player card counts
   playerCardsRef.on("value", async (snapshot) => {
-    const players = snapshot.val();
+    const players = snapshot.val() || {};
     const update = {};
-    for (let uid in players) {
-      const hand = players[uid].hand;
-      // if hand is not undefined, there is not winner, continue with update
-      if (hand !== undefined) {
-        update[`cards/playerCards/${uid}/cardCount`] = hand.length;
+
+    for (const uid of Object.keys(players)) {
+      const handObj = players[uid].hand;
+
+      // handObj is now an object (map of childKey → cardName)
+      if (handObj && typeof handObj === "object") {
+        const count = Object.keys(handObj).length;
+        update[`cards/playerCards/${uid}/cardCount`] = count;
       } else {
-        // There is a hand that is undefined, there is a winner.
-        // Proceed to update cardCount of player to 0 and update winner
+        // no hand node? treat as zero and declare a winner
         update[`cards/playerCards/${uid}/cardCount`] = 0;
         update["winner"] = uid;
         //update["roundInProgress"] = false; // TODO: is this needed?
       }
     }
-    refTable.update(update).catch((err) => {
-      console.log("error updating card count: " + err);
-    });
+
+    try {
+      await refTable.update(update);
+    } catch (err) {
+      console.error("error updating card count:", err);
+    }
   });
 
   // Listener for handling the winner
@@ -212,7 +140,7 @@ module.exports = function (dependencies) {
         const update = {};
         update[`chips/${winner}/chipCount`] =
           firebaseAdmin.database.ServerValue.increment(potAmount);
-        update["betting/pot/pot1"] = 0;
+        update["pot/pot1"] = 0;
         refTable.update(update).then(() => {
           fs.collection("users")
             .doc(winner)
@@ -236,15 +164,15 @@ module.exports = function (dependencies) {
     const currentPlayer = snapshot.val();
     const turnDuration = 30 * 1000; // 30 seconds
     const expirationTime = Date.now() + turnDuration;
-  
+
     // Update the realtime database with the expiration timestamp
     turnOrderRef.update({ turnExpiration: expirationTime });
-  
+
     // Clear any existing timer for the current player
     if (turnTimers[currentPlayer]) {
       clearTimeout(turnTimers[currentPlayer]);
     }
-  
+
     // Start a new timer for the current turn
     turnTimers[currentPlayer] = setTimeout(() => {
       console.log(`Player ${currentPlayer} timed out.`);
@@ -254,14 +182,30 @@ module.exports = function (dependencies) {
 
   async function skipPlayerTurn() {
     try {
-      const snapshot = await turnOrderRef.once("value");
-      const data = snapshot.val();
-      const playersList = data["players"];
-      const currentTurnPlayer = data["turnPlayer"];
+      // Get the current turn player and the list of players to
+      // determine the next player
+      const turnOrderSnapshot = await turnOrderRef.once("value");
+      const turnOrderData = turnOrderSnapshot.val();
+      const playersList = turnOrderData["players"];
+      const currentTurnPlayer = turnOrderData["turnPlayer"];
       const currentIndex = playersList.indexOf(currentTurnPlayer);
       const nextTurnIndex = (currentIndex + 1) % playersList.length;
       const nextTurnPlayer = playersList[nextTurnIndex];
-  
+
+      // Check if there is an action in progress under anteToCall
+      const anteToCallSnapshot = await db
+        .ref("tables/1/anteToCall")
+        .once("value");
+      const anteToCallData = anteToCallSnapshot.val();
+
+      if (anteToCallData["playerToCallPosition"] === currentTurnPlayer) {
+        // If the current player is the one who needs to call ante and action is pending then
+        // proceed to perform action to skip the turn
+        console.log(
+          `Skipping turn for ${currentTurnPlayer} due to ante action.`
+        );
+      }
+
       // Update the turnPlayer in the database using turnOrderRef
       await turnOrderRef.update({ turnPlayer: nextTurnPlayer });
       console.log(`Turn skipped. Next player is: ${nextTurnPlayer}`);
