@@ -309,118 +309,82 @@ router.post("/foldhand", async (req, res) => {
 
 router.post("/playCards", async (req, res) => {
   try {
-    var uid = req.body.uid;
-    var move = req.body.move;
-    var cardsToDiscard = req.body.cardsToDiscard;
-    var cardsInHand = req.body.cardsInHand;
-    var anteMultiplier = req.body.anteMultiplier;
-    var position = req.body.position;
-    var update = {};
+    // 1) Parse inputs
+    const uid                   = req.body.uid;
+    const moveArray             = req.body.move.slice(1, -1).split(", ");
+    const cardsToDiscardArray   = req.body.cardsToDiscard.slice(1, -1).split(", ");
+    const cardsInHandArray      = req.body.cardsInHand.slice(1, -1).split(", ");
+    const anteMultiplier        = parseInt(req.body.anteMultiplier, 10) || 0;
+    const cardsToDraw           = parseInt(req.body.cardsToDraw, 10)  || 0;
+    const combo                 = req.body.combo;
+    const action                = req.body.action;
 
-    // Removes the brackets surronding the move string array
-    var trimmedMoveString = move.slice(1, -1);
-    var trimmedCardsToDiscardString = cardsToDiscard.slice(1, -1);
-    var trimmedCardsInHandString = cardsInHand.slice(1, -1);
+    // 2) Determine next turn player
+    const turnSnap    = await turnRef.once("value");
+    const turnData    = turnSnap.val();
+    const playersList = turnData.players;       // e.g. [1,4,5]
+    const turnPlayer  = turnData.turnPlayer;    // numeric position
+    const idx         = playersList.indexOf(turnPlayer);
+    const nextIdx     = (idx + 1) % playersList.length;
+    const nextTurnPlayer = playersList[nextIdx];
 
-    // Convert string into array
-    var moveArray = trimmedMoveString.split(", ");
-    var cardsToDiscardArray = trimmedCardsToDiscardString.split(", ");
-    var cardsInHandArray = trimmedCardsInHandString.split(", ");
+    // 3) Fetch next player’s username
+    const nextTurnPlayerUsername = await playersRef
+      .child(String(nextTurnPlayer))
+      .child("username")
+      .once("value")
+      .then(snap => snap.val());
 
-    // Get the turn order information
-    const turnSnapshot = await turnRef.once("value");
-    const turnData = turnSnapshot.val();
-    var playersList = turnData["players"];
-    var turnPlayer = turnData["turnPlayer"];
-    var currentIndex = playersList.indexOf(turnPlayer);
-    var nextTurnIndex = currentIndex + 1;
-
-    let nextTurnPlayer;
-
+    // 4) Compute amountToCall
     let amountToCall = 0;
-    const cardsToDraw = req.body.cardsToDraw;
-    const combo = req.body.combo;
-    const action = req.body.action;
-    const usernameOfActionPlayer = req.body.username; // TODO: this will be used in the future to display the player that made the move
-
-    // Check if next player index is at the end of array
-    if (nextTurnIndex < playersList.length) {
-      // Next player index is NOT at the end of array
-      nextTurnPlayer = playersList[nextTurnIndex];
-    } else {
-      // Next player index is at the end of array, start from beginning
-      nextTurnPlayer = playersList[0];
-    }
-
-    // Get the username of the next turn player
-    const nextTurnPlayerString =
-      "tables/1/players/" + nextTurnPlayer + "/username";
-    const nextTurnPlayerRef = db.ref(nextTurnPlayerString);
-    const nextTurnPlayerSnapshot = await nextTurnPlayerRef.once("value");
-    const nextTurnPlayerData = nextTurnPlayerSnapshot.val();
-    console.log(nextTurnPlayerData);
-
-    // Create new post to push into Moves and Discard Pile list
-    var newMovesPost = movesRef.push();
-    var newDiscardPilePost = discardPileRef.push();
-
-    // Create muve update
-    var moveUpdate = {
-      uid: uid,
-      move: moveArray,
-    };
-
-    // Check if there is an amount to call for next player
     if (anteMultiplier > 0) {
-      // Get the betting information
-      const anteToCallSnapshot = await anteToCallRef.once("value");
-      const anteToCallData = anteToCallSnapshot.val();
-      const ante = anteToCallData["ante"];
-      amountToCall = ante * parseInt(anteMultiplier);
+      const anteData = (await anteToCallRef.once("value")).val() || {};
+      const ante     = parseInt(anteData.ante, 10) || 0;
+      amountToCall   = ante * anteMultiplier;
     }
 
-    // Add move and discard pile update
-    update["moves/" + newMovesPost.key] = moveUpdate;
-    update["cards/discardPile/" + newDiscardPilePost.key] = cardsToDiscardArray;
+    // 5) Build the new hand map in one go
+    const handRef = playerHandRef.child(uid).child("hand");
+    const handMap = {};
+    cardsInHandArray.forEach(cardName => {
+      const key = handRef.push().key;
+      handMap[key] = cardName;
+    });
 
-    // Create update for new hand and new turn player
-    update["cards/playerCards/" + uid + "/hand"] = cardsInHandArray;
+    // 6) Build multi-location update
+    const update = {};
+
+    // a) Log the move
+    const moveKey = movesRef.push().key;
+    update[`moves/${moveKey}`] = { uid, move: moveArray };
+
+    // b) Append each discarded card
+    cardsToDiscardArray.forEach(cardName => {
+      const dKey = discardPileRef.push().key;
+      update[`cards/discardPile/${dKey}`] = cardName;
+    });
+
+    // c) Replace entire hand atomically
+    update[`cards/playerCards/${uid}/hand`] = handMap;
+
+    // d) Advance turn
     update["turnOrder/turnPlayer"] = nextTurnPlayer;
 
-    // Update the player to call and the amount of chips need to call
-    update["anteToCall/playerToCallPosition"] = nextTurnPlayer;
-    update["anteToCall/amountToCall"] = amountToCall;
-    update["anteToCall/cardsToDraw"] = parseInt(cardsToDraw);
-    update["anteToCall/combo"] = combo;
-    update["anteToCall/action"] = action;
-    //update["anteToCall/usernameOfActionPlayer"] = usernameOfActionPlayer;
-    update["anteToCall/nextTurnPlayerUsername"] = nextTurnPlayerData;
-    update["anteToCall/didPlayerCall"] = false;
+    // e) Update anteToCall state
+    update["anteToCall/playerToCallPosition"]   = nextTurnPlayer;
+    update["anteToCall/amountToCall"]           = amountToCall;
+    update["anteToCall/cardsToDraw"]            = cardsToDraw;
+    update["anteToCall/combo"]                  = combo;
+    update["anteToCall/action"]                 = action;
+    update["anteToCall/nextTurnPlayerUsername"] = nextTurnPlayerUsername;
+    update["anteToCall/didPlayerCall"]          = false;
 
-    tableRef.update(update).then(() => {
-      // Cards in hand update success
-      res.status(201).json({ message: "Success" });
+    // 7) Commit all in one atomic update
+    await tableRef.update(update);
 
-      // Check if there was a bet
-      // if (isThereABet === true) {
-      //   // Update the betting amount on Firestore
-      //   fs.collection("users")
-      //     .doc(uid)
-      //     .update({
-      //       // Subtract what was betted from players total
-      //       chips: firebaseAdmin.firestore.FieldValue.increment(
-      //         -parseInt(betObject["amount"])
-      //       ),
-      //     })
-      //     .then(() => {
-      //       res.status(201).json({ message: "Success" });
-      //     });
-      // } else {
-      //   res.status(201).json({ message: "Success" });
-      // }
-    });
+    res.status(201).json({ message: "Success" });
   } catch (err) {
-    console.log("Error in /playCards", err);
+    console.error("Error in /playCards", err);
     res.status(500).json({ message: messageServerError });
   }
 });

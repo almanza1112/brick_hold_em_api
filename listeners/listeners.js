@@ -182,33 +182,78 @@ module.exports = function (dependencies) {
 
   async function skipPlayerTurn() {
     try {
-      // Get the current turn player and the list of players to
-      // determine the next player
-      const turnOrderSnapshot = await turnOrderRef.once("value");
-      const turnOrderData = turnOrderSnapshot.val();
-      const playersList = turnOrderData["players"];
-      const currentTurnPlayer = turnOrderData["turnPlayer"];
-      const currentIndex = playersList.indexOf(currentTurnPlayer);
-      const nextTurnIndex = (currentIndex + 1) % playersList.length;
-      const nextTurnPlayer = playersList[nextTurnIndex];
+      // 1) Load the current turn order and anteToCall state
+      const [turnSnap, anteSnap] = await Promise.all([
+        turnOrderRef.once("value"),
+        db.ref("tables/1/anteToCall").once("value"),
+      ]);
+      const turnOrderData = turnSnap.val();
+      const anteData = anteSnap.val() || {};
 
-      // Check if there is an action in progress under anteToCall
-      const anteToCallSnapshot = await db
-        .ref("tables/1/anteToCall")
-        .once("value");
-      const anteToCallData = anteToCallSnapshot.val();
+      const playersList = turnOrderData.players;
+      const currentTurnPlayer = turnOrderData.turnPlayer;
+      const cardsToDraw = parseInt(anteData.cardsToDraw, 10) || 0;
+      const amountToCall = parseInt(anteData.amountToCall, 10) || 0;
 
-      if (anteToCallData["playerToCallPosition"] === currentTurnPlayer) {
-        // If the current player is the one who needs to call ante and action is pending then
-        // proceed to perform action to skip the turn
+      // Compute next player
+      const idx = playersList.indexOf(currentTurnPlayer);
+      const nextIdx = (idx + 1) % playersList.length;
+      const nextTurnPlayer = playersList[nextIdx];
+
+      // Only do the skip/auto‐call if this player was the one to call
+      if (anteData.playerToCallPosition === currentTurnPlayer && !anteData.didPlayerCall) {
+        // 2) Look up the UID for that position
+        const playerSnap = await refPlayers
+          .child(String(currentTurnPlayer))
+          .once("value");
+        const uid = playerSnap.val().uid;
+
+        // 3) Pull the top N cards from the deck
+        const deckSnap = await deckRef
+          .orderByKey()
+          .limitToLast(cardsToDraw)
+          .once("value");
+        const deckMap = deckSnap.val() || {};
+
+        // 4) Build the multi‐location update
+        const updatePayload = {};
+
+        // — a) Remove those cards from the dealer’s deck
+        for (const cardKey of Object.keys(deckMap)) {
+          updatePayload[`cards/dealer/deck/${cardKey}`] = null;
+        }
+
+        // — b) Push each drawn card into the player’s hand
+        const handBase = `cards/playerCards/${uid}/hand`;
+        for (const cardName of Object.values(deckMap)) {
+          const newKey = playerCardsRef.child(uid).child("hand").push().key;
+          updatePayload[`${handBase}/${newKey}`] = cardName;
+        }
+
+        // — c) Debit their chips and credit the pot
+        updatePayload[`chips/${uid}/chipCount`] =
+          firebaseAdmin.database.ServerValue.increment(-amountToCall);
+        updatePayload[`pot/pot1`] =
+          firebaseAdmin.database.ServerValue.increment(amountToCall);
+
+        // — d) Mark that they auto-called/skipped
+        updatePayload["anteToCall/didPlayerCall"] = true;
+
+        // 5) Advance the turn as well
+        updatePayload["turnOrder/turnPlayer"] = nextTurnPlayer;
+
+        // 6) Commit all at once
+        await refTable.update(updatePayload);
+
         console.log(
-          `Skipping turn for ${currentTurnPlayer} due to ante action.`
+          `Player ${currentTurnPlayer} auto-called ${amountToCall}, drew ${cardsToDraw} cards, next is ${nextTurnPlayer}`
         );
+      } else {
+        // Not the caller's turn-skipping case: just advance normally
+        await turnOrderRef.update({ turnPlayer: nextTurnPlayer });
+        console.log(`Turn skipped. Next player is: ${nextTurnPlayer}`);
       }
 
-      // Update the turnPlayer in the database using turnOrderRef
-      await turnOrderRef.update({ turnPlayer: nextTurnPlayer });
-      console.log(`Turn skipped. Next player is: ${nextTurnPlayer}`);
       return nextTurnPlayer;
     } catch (error) {
       console.error("Error in skipPlayerTurn:", error);
