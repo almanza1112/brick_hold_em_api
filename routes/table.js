@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express();
+const TurnService = require("../services/TurnService");
 
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
@@ -20,6 +21,8 @@ var anteToCallRef = db.ref("tables/1/anteToCall");
 var isRoundInProgressRef = db.ref("tables/1/roundInProgress");
 
 const messageServerError = "Invalid server error.";
+const turnService = new TurnService({ db, firebaseAdmin, fs });
+
 
 // Getting all
 router.get("/", async (req, res) => {
@@ -385,6 +388,20 @@ router.post("/playCards", async (req, res) => {
     res.status(201).json({ message: "Success" });
   } catch (err) {
     console.error("Error in /playCards", err);
+    res.status(500).json({ message: messageServerError });
+  }
+});
+
+router.get("/skipturn", async (req, res) => {
+  console.log("Skip turn request received");
+   try {
+    // wait for the skip logic to finish
+    const nextPlayer = await turnService.skipPlayerTurn();
+
+    // send back the new turnPlayer so the client can update immediately
+    res.status(200).json({ nextTurnPlayer: nextPlayer });
+  } catch (err) {
+    console.error("Error in /skipturn:", err);
     res.status(500).json({ message: messageServerError });
   }
 });

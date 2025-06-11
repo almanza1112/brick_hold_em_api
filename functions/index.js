@@ -1,4 +1,6 @@
-const {onValueUpdated} = require("firebase-functions/v2/database");
+const {onValueUpdated,
+  onValueWritten,
+  onValueDeleted} = require("firebase-functions/v2/database");
 const admin = require("firebase-admin");
 admin.initializeApp();
 
@@ -70,6 +72,8 @@ exports.startGame = onValueUpdated(
 
         // 4) start your multi-location payload by initializing it
         const updatePayload = {
+          // resset anteToCall
+          // 'anteToCall': {},
           // replace the deck
           "cards/dealer/deck": deckMap,
           "cards/dealer/deckCount": deck.length,
@@ -144,6 +148,86 @@ exports.startGame = onValueUpdated(
       } catch (err) {
         console.error("Error starting game automatically:", err);
       }
+      return null;
+    },
+);
+
+/**
+ * syncDeckCount
+ * Fires on any update to /cards/dealer/deck.
+ * If the deck node disappears or has no children, it writes deckCount: 0.
+ */
+exports.syncDeckCount = onValueWritten(
+    "/tables/1/cards/dealer/deck",
+    async (event) => {
+      // Grab the raw value; if the node is gone this will be null
+      const val = event.data.after.val();
+      // If it's an object, count its keys; otherwise size=0
+      const deckSize = (val && typeof val === "object") ?
+        Object.keys(val).length : 0;
+
+      console.log("syncDeckCount: raw val =", val);
+      console.log("syncDeckCount: computed deckSize =", deckSize);
+
+      // Write it back, even if zero
+      await db
+          .ref("tables/1/cards/dealer")
+          .update({deckCount: deckSize});
+
+      return null;
+    },
+);
+
+/**
+ * reshuffleOnEmpty
+ * Triggered when deckCount changes.
+ * As soon as it becomes 0, we reshuffle the discardPile back into the deck.
+ */
+exports.reshuffleOnEmpty = onValueDeleted(
+    "/tables/1/cards/dealer/deck",
+    async (event) => {
+      console.log("reshuffleOnEmpty: deck node was deleted");
+
+      const tableRef = db.ref("tables/1");
+      const deckRef = tableRef.child("cards/dealer/deck");
+      const discardRef = tableRef.child("cards/discardPile");
+
+      // 1) Gather all cards from discard pile
+      const discardSnap = await discardRef.get();
+      const pile = [];
+      discardSnap.forEach((child) => {
+        pile.push(child.val());
+      });
+      console.log("  discardPile contents:", pile);
+
+      // 2) Set aside the face-up card, shuffle the rest
+      const faceUpCard = pile.pop();
+      console.log("  faceUpCard saved:", faceUpCard);
+      const newDeck = startingHand.shuffleArray(pile);
+      console.log("  newDeck shuffled:", newDeck);
+
+      // 3) Build the full deck map
+      const deckMap = {};
+      newDeck.forEach((cardName) => {
+        const key = deckRef.push().key;
+        deckMap[key] = cardName;
+      });
+
+      // 4) Build the single face-up discard map
+      const discardMap = {};
+      const upKey = discardRef.push().key;
+      discardMap[upKey] = faceUpCard;
+
+      // 5) Commit both in one atomic update
+      const updatePayload = {
+        "cards/dealer/deck": deckMap,
+        "cards/dealer/deckCount": newDeck.length,
+        "cards/discardPile": discardMap,
+      };
+      await tableRef.update(updatePayload);
+
+      console.log("→ reshuffleOnEmpty: deck rebuilt and face-up card set");
+
       return null;
     },
 );
