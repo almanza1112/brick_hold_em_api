@@ -18,6 +18,7 @@ a user existing already. So I'll do the following:
 */
 // Check if email already exists in system
 router.get('/:_email', async (req, res) => {
+    console.log("Checking if email exists in system...")
     try {
         var email = req.params._email;
         console.log("email: " + email)

@@ -5,7 +5,6 @@ const TurnService = require("../services/TurnService");
 router.use(express.json());
 router.use(express.urlencoded({ extended: true }));
 
-
 var firebaseAdmin = require("firebase-admin");
 var db = firebaseAdmin.database();
 var fs = firebaseAdmin.firestore();
@@ -22,7 +21,6 @@ var isRoundInProgressRef = db.ref("tables/1/roundInProgress");
 
 const messageServerError = "Invalid server error.";
 const turnService = new TurnService({ db, firebaseAdmin, fs });
-
 
 // Getting all
 router.get("/", async (req, res) => {
@@ -313,22 +311,24 @@ router.post("/foldhand", async (req, res) => {
 router.post("/playCards", async (req, res) => {
   try {
     // 1) Parse inputs
-    const uid                   = req.body.uid;
-    const moveArray             = req.body.move.slice(1, -1).split(", ");
-    const cardsToDiscardArray   = req.body.cardsToDiscard.slice(1, -1).split(", ");
-    const cardsInHandArray      = req.body.cardsInHand.slice(1, -1).split(", ");
-    const anteMultiplier        = parseInt(req.body.anteMultiplier, 10) || 0;
-    const cardsToDraw           = parseInt(req.body.cardsToDraw, 10)  || 0;
-    const combo                 = req.body.combo;
-    const action                = req.body.action;
+    const uid = req.body.uid;
+    const moveArray = req.body.move.slice(1, -1).split(", ");
+    const cardsToDiscardArray = req.body.cardsToDiscard
+      .slice(1, -1)
+      .split(", ");
+    const cardsInHandArray = req.body.cardsInHand.slice(1, -1).split(", ");
+    const anteMultiplier = parseInt(req.body.anteMultiplier, 10) || 0;
+    const cardsToDraw = parseInt(req.body.cardsToDraw, 10) || 0;
+    const combo = req.body.combo;
+    const action = req.body.action;
 
     // 2) Determine next turn player
-    const turnSnap    = await turnRef.once("value");
-    const turnData    = turnSnap.val();
-    const playersList = turnData.players;       // e.g. [1,4,5]
-    const turnPlayer  = turnData.turnPlayer;    // numeric position
-    const idx         = playersList.indexOf(turnPlayer);
-    const nextIdx     = (idx + 1) % playersList.length;
+    const turnSnap = await turnRef.once("value");
+    const turnData = turnSnap.val();
+    const playersList = turnData.players; // e.g. [1,4,5]
+    const turnPlayer = turnData.turnPlayer; // numeric position
+    const idx = playersList.indexOf(turnPlayer);
+    const nextIdx = (idx + 1) % playersList.length;
     const nextTurnPlayer = playersList[nextIdx];
 
     // 3) Fetch next player’s username
@@ -336,20 +336,20 @@ router.post("/playCards", async (req, res) => {
       .child(String(nextTurnPlayer))
       .child("username")
       .once("value")
-      .then(snap => snap.val());
+      .then((snap) => snap.val());
 
     // 4) Compute amountToCall
     let amountToCall = 0;
     if (anteMultiplier > 0) {
       const anteData = (await anteToCallRef.once("value")).val() || {};
-      const ante     = parseInt(anteData.ante, 10) || 0;
-      amountToCall   = ante * anteMultiplier;
+      const ante = parseInt(anteData.ante, 10) || 0;
+      amountToCall = ante * anteMultiplier;
     }
 
     // 5) Build the new hand map in one go
     const handRef = playerHandRef.child(uid).child("hand");
     const handMap = {};
-    cardsInHandArray.forEach(cardName => {
+    cardsInHandArray.forEach((cardName) => {
       const key = handRef.push().key;
       handMap[key] = cardName;
     });
@@ -359,10 +359,10 @@ router.post("/playCards", async (req, res) => {
 
     // a) Log the move
     const moveKey = movesRef.push().key;
-    update[`moves/${moveKey}`] = { uid, move: moveArray };
+    update[`moves/${moveKey}`] = { uid, move: moveArray, combo};
 
     // b) Append each discarded card
-    cardsToDiscardArray.forEach(cardName => {
+    cardsToDiscardArray.forEach((cardName) => {
       const dKey = discardPileRef.push().key;
       update[`cards/discardPile/${dKey}`] = cardName;
     });
@@ -374,13 +374,13 @@ router.post("/playCards", async (req, res) => {
     update["turnOrder/turnPlayer"] = nextTurnPlayer;
 
     // e) Update anteToCall state
-    update["anteToCall/playerToCallPosition"]   = nextTurnPlayer;
-    update["anteToCall/amountToCall"]           = amountToCall;
-    update["anteToCall/cardsToDraw"]            = cardsToDraw;
-    update["anteToCall/combo"]                  = combo;
-    update["anteToCall/action"]                 = action;
+    update["anteToCall/playerToCallPosition"] = nextTurnPlayer;
+    update["anteToCall/amountToCall"] = amountToCall;
+    update["anteToCall/cardsToDraw"] = cardsToDraw;
+    update["anteToCall/combo"] = combo;
+    update["anteToCall/action"] = action;
     update["anteToCall/nextTurnPlayerUsername"] = nextTurnPlayerUsername;
-    update["anteToCall/didPlayerCall"]          = false;
+    update["anteToCall/didPlayerCall"] = false;
 
     // 7) Commit all in one atomic update
     await tableRef.update(update);
@@ -394,7 +394,7 @@ router.post("/playCards", async (req, res) => {
 
 router.get("/skipturn", async (req, res) => {
   console.log("Skip turn request received");
-   try {
+  try {
     // wait for the skip logic to finish
     const nextPlayer = await turnService.skipPlayerTurn();
 
