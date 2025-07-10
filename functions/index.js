@@ -2,10 +2,105 @@ const {onValueUpdated,
   onValueWritten,
   onValueDeleted} = require("firebase-functions/v2/database");
 const admin = require("firebase-admin");
+const {onCall, HttpsError} = require("firebase-functions/v2/https");
 admin.initializeApp();
 
 const db = admin.database();
 const startingHand = require("./table/table_starting_hand");
+
+/** * Cloud Function: joinTable
+ * Triggered by an HTTP request to join a table.
+ * It expects a JSON payload with the following fields:
+ * - tableId: the ID of the table to join
+ * - uid: the unique user ID of the player
+ * - name: the player's name
+ * - photoURL: (optional) the player's photo URL
+ * - username: (optional) the player's username
+ * - chips: the number of chips the player is bringing to the table
+ * It performs the following steps:
+ * 1) Validates inputs
+ * 2) Fetches the table and its players
+ * 3) Checks if the user is already in the table
+ * 4) If not, determines the next available position
+ * 5) If there are fewer than 6 players, adds the user to the table
+ * 6) If there are already 6 players, adds the user to the queue
+ * 7) Returns the position of the player or a message indicating 
+ *    they were added to the queue
+ * 8) Handles errors gracefully
+ * **/
+exports.joinTable = onCall(async (request) => {
+  // Validate inputs
+  const tableId = request.data.tableId;
+  const uid = request.data.uid;
+  const name = request.data.name;
+  const photoURL = request.data.photoURL || null;
+  const username = request.data.username || null;
+  const chips = parseInt(request.data.chips, 10);
+
+  if (!tableId || !chips || isNaN(chips)) {
+    throw new HttpsError(
+        "invalid-argument",
+        "Missing or invalid tableId or chips.",
+    );
+  }
+
+  const tableRef = db.ref(`tables/${tableId}`);
+  const playersRef = tableRef.child("players");
+  const queueRef = tableRef.child("queue");
+  const roundInProgressRef = tableRef.child("roundInProgress");
+
+  try {
+    // 3) Fetch existing players
+    const snap = await playersRef.get();
+    const players = snap.exists() ? snap.val() : {};
+
+    // 4) Check if user already joined
+    const existingEntry = Object.entries(players)
+        .find(([pos, p]) => p.uid === uid);
+    const existingPos = existingEntry ? existingEntry[0] : null;
+    if (existingPos) {
+      return {position: Number(existingPos), message: "Already joined"};
+    }
+
+    // 5) Determine next position
+    const occupied = Object.keys(players)
+        .map((k) => parseInt(k, 10))
+        .sort((a, b)=>a-b);
+    let position = 1;
+    while (occupied.includes(position)) {
+      position++;
+    }
+
+    // 6) If fewer than 6, add to table; otherwise queue
+    if (occupied.length < 6) {
+      // 6a) Check if round is in progress
+      const inProgressSnap = await roundInProgressRef.get();
+      const folded = !!inProgressSnap.val();
+
+      // 6b) Build atomic update
+      const updates = {
+        [`players/${position}`]:
+          {uid, name, photoURL, username, position, folded},
+        [`chips/${uid}/chipCount`]: chips,
+      };
+      await tableRef.update(updates);
+
+      return {
+        position,
+        message: `Player added at seat ${position}.`,
+      };
+    } else {
+      // 6c) Too many players → enqueue
+      await queueRef.push({uid, name, photoURL,
+        username, requestedChips: chips});
+      return {message: "Table full; you’ve been added to the queue."};
+    }
+  } catch (err) {
+    console.error("joinTable error:", err);
+    throw new HttpsError("internal", "Server error");
+  }
+});
+
 
 /**
  *
