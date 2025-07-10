@@ -8,25 +8,49 @@ admin.initializeApp();
 const db = admin.database();
 const startingHand = require("./table/table_starting_hand");
 
+
+// This is used in the sign up process and makes sure
+// that the email is not being used already
+exports.verifyEmail = onCall(async (request) => {
+  const email = request.data.email;
+
+  // 1) Validate input
+  if (!email || typeof email !== "string") {
+    throw new HttpsError(
+        "invalid-argument",
+        "Email is required and must be a string.",
+    );
+  }
+
+  try {
+    // try to fetch a user by email
+    await admin.auth().getUserByEmail(email);
+    // if found, it's in use
+    return {exists: true};
+  } catch (error) {
+    if (error.code === "auth/user-not-found") {
+      // not in use
+      return {exists: false};
+    }
+    if (error.code === "auth/invalid-email") {
+      // malformed email
+      throw new HttpsError(
+          "invalid-argument",
+          "Email address is improperly formatted.",
+      );
+    }
+    // Unexpected failure
+    console.error("verifyEmail unexpected error:", error);
+    throw new HttpsError(
+        "internal",
+        "An internal error occurred. Please try again later.",
+    );
+  }
+});
+
+
 /** * Cloud Function: joinTable
  * Triggered by an HTTP request to join a table.
- * It expects a JSON payload with the following fields:
- * - tableId: the ID of the table to join
- * - uid: the unique user ID of the player
- * - name: the player's name
- * - photoURL: (optional) the player's photo URL
- * - username: (optional) the player's username
- * - chips: the number of chips the player is bringing to the table
- * It performs the following steps:
- * 1) Validates inputs
- * 2) Fetches the table and its players
- * 3) Checks if the user is already in the table
- * 4) If not, determines the next available position
- * 5) If there are fewer than 6 players, adds the user to the table
- * 6) If there are already 6 players, adds the user to the queue
- * 7) Returns the position of the player or a message indicating 
- *    they were added to the queue
- * 8) Handles errors gracefully
  * **/
 exports.joinTable = onCall(async (request) => {
   // Validate inputs
