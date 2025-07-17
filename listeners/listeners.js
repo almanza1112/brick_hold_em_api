@@ -11,44 +11,12 @@ module.exports = function (dependencies) {
 
   // Define your Firebase references here or reuse them if passed in
   const refTable = db.ref("tables/1");
-  const refPlayers = db.ref("tables/1/players");
-  const refIsRoundInProgress = db.ref("tables/1/roundInProgress");
   const playerCardsRef = db.ref("tables/1/cards/playerCards");
   const winnerRef = db.ref("tables/1/winner");
   const potRef = db.ref("tables/1/pot/pot1");
   const turnOrderRef = db.ref("tables/1/turnOrder");
   const turnPlayerRef = db.ref("tables/1/turnOrder/turnPlayer");
 
-  // Utility functions can be defined here
-  async function isRoundInProgress() {
-    return await refIsRoundInProgress.get().then((snapshot) => snapshot.val());
-  }
-
-  // ----- Attach Event Listeners -----
-
-  // Listener for when a player joins the lobby
-  refPlayers.on(
-    "value",
-    async (snapshot) => {
-      const data = snapshot.toJSON();
-      if (!data) {
-        // Table is empty or does not exist
-        return;
-      }
-
-      const numOfPlayers = Object.keys(data).length;
-      if (numOfPlayers > 1) {
-        if (!(await isRoundInProgress())) {
-          startGame(data, numOfPlayers);
-        }
-      } else {
-        refTable.update({ roundInProgress: false });
-      }
-    },
-    (error) => {
-      console.log("The read failed: " + error.name);
-    }
-  );
 
   // Listener for updating player card counts
   playerCardsRef.on("value", async (snapshot) => {

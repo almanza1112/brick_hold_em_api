@@ -3,10 +3,18 @@ const {onValueUpdated,
   onValueDeleted} = require("firebase-functions/v2/database");
 const admin = require("firebase-admin");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
-admin.initializeApp();
+const TurnService = require("./services/TurnService");
 
+admin.initializeApp();
+const fs = admin.firestore();
 const db = admin.database();
 const startingHand = require("./table/table_starting_hand");
+
+const turnService = new TurnService({
+  db: admin.database(),
+  firebaseAdmin: admin,
+  fs: admin.firestore(),
+});
 
 
 // This is used in the sign up process and makes sure
@@ -125,152 +133,6 @@ exports.joinTable = onCall(async (request) => {
   }
 });
 
-
-/**
- *
- * Utility function: Retrieve the current turn order.
- **/
-async function getTurnOrder() {
-  try {
-    const snapshot = await db.ref("tables/1/turnOrder").get();
-    return snapshot.val();
-  } catch (err) {
-    console.log("ERROR in getTurnOrder:", err);
-    return null;
-  }
-}
-
-/**
- * Cloud Function: autoStartGame
- * Triggered when the value at `/tables/1/nextGameStarts` is updated.
- * When the current time is past the scheduled timestamp, this function
- * resets the game.
- */
-exports.startGame = onValueUpdated(
-    "/tables/1/nextGameStarts",
-    async (event) => {
-      const nextGameStarts = event.data.after.val();
-      if (!nextGameStarts) {
-        console.log("nextGameStarts not set—aborting.");
-        return null;
-      }
-
-      // wait until the scheduled moment
-      let now = Date.now();
-      if (now < nextGameStarts) {
-        await new Promise((res) => setTimeout(res, nextGameStarts - now));
-        now = Date.now();
-      }
-
-      try {
-        const tableRef = db.ref("tables/1");
-        const playersRef = tableRef.child("players");
-        const discardPileRef = tableRef.child("cards/discardPile");
-
-        // 1) grab the list of players
-        const playersSnap = await playersRef.get();
-        const playersData = playersSnap.val();
-        if (!playersData) {
-          console.log("No players found—cannot start game.");
-          return null;
-        }
-        const numPlayers = Object.keys(playersData).length;
-
-        // 2) generate shuffled deck + hands
-        const {deck, playersCards, faceUpCard} =
-          startingHand.setCards(numPlayers);
-        const topFaceUp = faceUpCard[0];
-
-        // 3) build a map of new deck children: { pushKey: cardName }
-        const deckListRef = tableRef.child("cards/dealer/deck");
-        const deckMap = {};
-        deck.forEach((cardName) => {
-          const key = deckListRef.push().key;
-          deckMap[key] = cardName;
-        });
-
-        // 4) start your multi-location payload by initializing it
-        const updatePayload = {
-          // resset anteToCall
-          // 'anteToCall': {},
-          // replace the deck
-          "cards/dealer/deck": deckMap,
-          "cards/dealer/deckCount": deck.length,
-
-          // clear discard pile
-          "cards/discardPile": {},
-
-          // game flags you already know
-          "roundInProgress": true,
-          "nextGameStarts": 0,
-        };
-
-
-        // 5) build each player’s new hand as a map too
-        Object.values(playersData).forEach((playerObj, idx) => {
-          console.log("Processing player:", playerObj);
-          console.log("idx:", idx);
-          const uid = playerObj.uid;
-          const cardsForMe = playersCards[idx];
-          const handMap = {};
-          const handRef = tableRef
-              .child(`cards/playerCards/${uid}/hand`);
-          cardsForMe.forEach((cardName) => {
-            const childKey = handRef.push().key;
-            handMap[childKey] = cardName;
-          });
-
-          // inject under the correct UID path:
-          updatePayload[`cards/playerCards/${uid}`] = {
-            hand: handMap,
-            position: playerObj.position,
-          };
-        });
-
-
-        // 6) compute new turnOrder
-        const positions = Object.values(playersData)
-            .map((p) => Number(p.position))
-            .reverse();
-        const turnOrderObj = {};
-        const existingOrder = await getTurnOrder();
-        if (existingOrder) {
-          const prev = existingOrder.firstTurnPlayer;
-          const curIndex = positions.indexOf(prev);
-          const nextIndex = (curIndex + 1) % positions.length;
-          turnOrderObj.firstTurnPlayer = positions[nextIndex];
-          turnOrderObj.turnPlayer = positions[nextIndex];
-        } else {
-          const rand = Math.floor(Math.random() * positions.length);
-          turnOrderObj.firstTurnPlayer = positions[rand];
-          turnOrderObj.turnPlayer = positions[rand];
-        }
-        turnOrderObj.players = positions;
-        turnOrderObj.turnExpiration = now + 30000;
-
-        // 7) reset betting & moves
-        const pot = {pot1: 0, potCount: 1};
-
-        // 8) add to the big multi-location update under /tables/1
-        updatePayload["turnOrder"] = turnOrderObj;
-        updatePayload["pot"] = pot;
-        updatePayload["moves"] = [];
-        updatePayload["winner"] = "none";
-
-        // 10) commit atomically
-        await tableRef.update(updatePayload);
-
-        // 11) push the one face-up card
-        await discardPileRef.push().set(topFaceUp);
-
-        console.log("New game started at", now);
-      } catch (err) {
-        console.error("Error starting game automatically:", err);
-      }
-      return null;
-    },
-);
-
 /**
  * syncDeckCount
  * Fires on any update to /cards/dealer/deck.
@@ -350,3 +212,138 @@ exports.reshuffleOnEmpty = onValueDeleted(
       return null;
     },
 );
+
+/**
+ * 1) Immediate start when players go from ≤1 ⇒ ≥2
+ */
+exports.onPlayerListChange = onValueWritten(
+    "/tables/{tableId}/players",
+    async (event) => {
+      const tableId = event.params.tableId;
+      const beforeVal = event.data.before.val() || {};
+      const afterVal = event.data.after.val() || {};
+      const numBefore = Object.keys(beforeVal).length;
+      const numAfter = Object.keys(afterVal).length;
+      const tableRef = admin.database().ref(`tables/${tableId}`);
+
+      // if everyone left (or only one remains), clear in-progress
+      if (numAfter <= 1) {
+        await tableRef.child("roundInProgress").set(false);
+        return;
+      }
+
+      // only fire on the transition 1 ⇒ 2
+      if (numBefore <= 1 && numAfter > 1) {
+        // bail if there’s a scheduled start pending
+        const nextTs = (await tableRef
+            .child("nextGameStarts").once("value")).val() || 0;
+        if (nextTs > Date.now()) return;
+
+        // bail if a round is already in progress
+        const inProg = (await tableRef
+            .child("roundInProgress").once("value")).val();
+        if (inProg) return;
+
+        // clear any stray timestamp and start immediately
+        await tableRef.child("nextGameStarts").set(0);
+        await turnService.startGame(afterVal, numAfter, tableId);
+      }
+    },
+);
+
+/**
+ * Cloud Function: autoStartGame
+ * Triggered when the value at `/tables/1/nextGameStarts` is updated.
+ * When the current time is past the scheduled timestamp, this function
+ * resets the game.
+ */
+exports.onScheduledStart = onValueUpdated(
+    "/tables/{tableId}/nextGameStarts",
+    async (event) => {
+      const tableId = event.params.tableId;
+      const oldTs = event.data.before.val() || 0;
+      const newTs = event.data.after.val() || 0;
+      // Only act when the timestamp actually changed and is non-zero
+      if (newTs === oldTs || newTs === 0) return;
+
+      // Wait until we reach the scheduled moment
+      const now = Date.now();
+      const delay = newTs - now;
+      if (delay > 0) {
+        await new Promise((res) => setTimeout(res, delay));
+      }
+
+      const tableRef = admin.database().ref(`tables/${tableId}`);
+
+      // bail if round is already running
+      const inProg = (await tableRef
+          .child("roundInProgress").once("value")).val();
+      if (inProg) {
+        await tableRef.child("nextGameStarts").set(0);
+        return;
+      }
+
+      // fetch current players
+      const playersSnap = await tableRef.child("players").once("value");
+      const playersData = playersSnap.val() || {};
+      const numPlayers = Object.keys(playersData).length;
+
+      // need at least 2 to start
+      if (numPlayers < 2) {
+        await tableRef.child("nextGameStarts").set(0);
+        return;
+      }
+
+      // kick off the round
+      await turnService.startGame(playersData, numPlayers, tableId);
+
+      // clear the timestamp so it won’t immediately re-fire
+      await tableRef.child("nextGameStarts").set(0);
+    },
+);
+
+/**
+ * When `/tables/{tableId}/winner` flips away from `"none"`,
+ * award the pot to that winner and reset the pot, then
+ * schedule the next game start timestamp.
+ */
+exports.handleWinner = onValueUpdated(
+    "/tables/{tableId}/winner",
+    async (event) => {
+      const tableId = event.params.tableId;
+      const newWinner = event.data.after.val();
+      if (!newWinner || newWinner === "none") {
+        // no real winner → nothing to do
+        return;
+      }
+
+      const tableRef = db.ref(`tables/${tableId}`);
+      const potRef = tableRef.child("pot/pot1");
+
+      // 1) grab the pot amount
+      const potSnap = await potRef.get();
+      const potAmt = potSnap.val() || 0;
+
+      if (potAmt > 0) {
+        // 2) update RTDB: award chips and clear pot
+        const updates = {
+          [`chips/${newWinner}/chipCount`]:
+              admin.database.ServerValue.increment(potAmt),
+          "pot/pot1": 0,
+        };
+        await tableRef.update(updates);
+
+        // 3) mirror into Firestore user document
+        await fs.collection("users")
+            .doc(newWinner)
+            .update({
+              chips: admin.firestore.FieldValue.increment(potAmt),
+            });
+
+        // 4) schedule the next round 5s out
+        const nextGameStarts = Date.now() + 5000;
+        await tableRef.update({nextGameStarts});
+      }
+    },
+);
+
